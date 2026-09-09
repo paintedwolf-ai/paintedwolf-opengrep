@@ -4,7 +4,7 @@
   "name": "opengrep",
   "revision": "acf67b45c97c4b63626536605c77064ef536806d",
   "upstream": "https://github.com/opengrep/opengrep.git",
-  "version": "1.30.0+paintedwolf.33"
+  "version": "1.30.0+paintedwolf.34"
  },
  "components": [
   {
