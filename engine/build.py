@@ -281,6 +281,7 @@ def main():
             parser.error("--check does not accept a build directory or --prepare-only")
         with tempfile.TemporaryDirectory(prefix="opengrep-source-check-") as temporary:
             snapshot_package(PACKAGE, Path(temporary) / "inputs")
+        dependency_support(PACKAGE).validate_opam_locks(PACKAGE)
         print("Opengrep source package integrity verified")
         return
     if args.directory is None:
@@ -295,6 +296,7 @@ def main():
     root.mkdir(parents=True)
     package = root / "inputs"
     lock = snapshot_package(PACKAGE, package)
+    dependency_support(package).validate_opam_locks(package)
     spec = importlib.util.spec_from_file_location("opengrep_build_signing", package / "signing/signing.py")
     signing = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = signing

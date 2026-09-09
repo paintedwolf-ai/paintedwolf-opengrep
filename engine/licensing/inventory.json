@@ -4,7 +4,7 @@
   "name": "opengrep",
   "revision": "acf67b45c97c4b63626536605c77064ef536806d",
   "upstream": "https://github.com/opengrep/opengrep.git",
-  "version": "1.30.0+paintedwolf.34"
+  "version": "1.30.0+paintedwolf.35"
  },
  "components": [
   {
@@ -3763,21 +3763,21 @@
    "license_basis": "LICENSE at the pinned fork revision",
    "linkage": "static",
    "linkage_basis": "opam runtime dependency closure",
-   "note": "The switch export pins this to commit c2cced325a93d2271379f0712db85867b29dbee1 on a personal GitLab fork. It is the only input in the switch with no checksum \u2014 opam records none for a git source \u2014 and the only one not published as a release archive, so its bytes have to travel with the product rather than be refetched.",
+   "note": "The checksummed source archive contains commit c2cced325a93d2271379f0712db85867b29dbee1 and is retained with the artifact.",
    "obligations": [
     "notice",
     "license-text",
     "source-offer"
    ],
    "provenance": {
-    "branch": "dm/ocaml-5.3.0-opengrep",
-    "git": "https://gitlab.com/dimitris-m/memprof-limits.git",
+    "actual_sha256": "5e803e824ca9595b702bab71a3cb3c343dc6541e863ce624591ffd0b35d47db9",
     "homepage": "https://gitlab.com/gadmm/memprof-limits/",
     "linkage": "static",
-    "note": "engine dune-project pins this package by branch, not by commit; the revision here was resolved on 2026-09-07 and is what the inventory was built against",
     "opam_license": "\"LGPL-3.0-only WITH LGPL-3.0-linking-exception\"",
-    "opam_source": "git+https://gitlab.com/dimitris-m/memprof-limits.git#c2cced325a93d2271379f0712db85867b29dbee1",
-    "revision": "c2cced325a93d2271379f0712db85867b29dbee1"
+    "pinned_sha256": "5e803e824ca9595b702bab71a3cb3c343dc6541e863ce624591ffd0b35d47db9",
+    "revision": "c2cced325a93d2271379f0712db85867b29dbee1",
+    "sha256_match": true,
+    "url": "https://gitlab.com/dimitris-m/memprof-limits/-/archive/c2cced325a93d2271379f0712db85867b29dbee1/memprof-limits-c2cced325a93d2271379f0712db85867b29dbee1.tar.gz"
    },
    "spdx": "LGPL-3.0"
   },

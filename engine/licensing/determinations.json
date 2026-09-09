@@ -34,7 +34,7 @@
     "LGPL-3.0-linking-exception"
    ],
    "basis": "LICENSE at the pinned fork revision",
-   "note": "The switch export pins this to commit c2cced325a93d2271379f0712db85867b29dbee1 on a personal GitLab fork. It is the only input in the switch with no checksum \u2014 opam records none for a git source \u2014 and the only one not published as a release archive, so its bytes have to travel with the product rather than be refetched."
+   "note": "The checksummed source archive contains commit c2cced325a93d2271379f0712db85867b29dbee1 and is retained with the artifact."
   },
   "ocaml/ambient-context-0.2": {
    "license": "MIT",

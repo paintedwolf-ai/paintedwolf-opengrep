@@ -1,5 +1,5 @@
 {
-  "artifact_version": "1.30.0+paintedwolf.34",
+  "artifact_version": "1.30.0+paintedwolf.35",
   "retained": [
     {
       "id": "native/gmp",
@@ -109,10 +109,10 @@
         "license-text",
         "source-offer"
       ],
-      "revision": "c2cced325a93d2271379f0712db85867b29dbee1",
-      "sha256": null,
+      "revision": null,
+      "sha256": "5e803e824ca9595b702bab71a3cb3c343dc6541e863ce624591ffd0b35d47db9",
       "sha512": null,
-      "url": "https://gitlab.com/dimitris-m/memprof-limits.git"
+      "url": "https://gitlab.com/dimitris-m/memprof-limits/-/archive/c2cced325a93d2271379f0712db85867b29dbee1/memprof-limits-c2cced325a93d2271379f0712db85867b29dbee1.tar.gz"
     },
     {
       "id": "ocaml/menhirLib-20230608",

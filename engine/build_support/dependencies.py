@@ -175,6 +175,33 @@ def grammar_generator(package, destination, generator, platform):
     return binary
 
 
+def validate_opam_sources(path):
+    """Check source sections in a canonical full switch export."""
+    text = path.read_text()
+    sections = re.findall(r'^  (url|extra-source "[^"\n]+") \{\n(.*?)^  \}$', text, re.M | re.S)
+    declarations = re.findall(r'^\s*(?:url|extra-source)\b[^\n]*\{', text, re.M)
+    if not sections or len(sections) != len(declarations):
+        raise ValueError(f"Unsupported opam source section layout: {path}")
+    for kind, body in sections:
+        sources = re.findall(r'^    src:\s*"([^"\n]+)"', body, re.M)
+        checksums = re.findall(r'^    checksum:\s*(\[[^\]]*\]|"[^"\n]*")', body, re.M)
+        if len(sources) != 1 or len(checksums) != 1:
+            raise ValueError(f"Opam {kind} requires one source and checksum field: {path}")
+        url = urllib.parse.urlsplit(sources[0])
+        if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password:
+            raise ValueError(f"Opam source must be a checksummed HTTP archive: {sources[0]}")
+        if not re.search(r'"(?:sha256=[a-f0-9]{64}|sha512=[a-f0-9]{128})"', checksums[0]):
+            raise ValueError(f"Opam source requires SHA-256 or SHA-512: {sources[0]}")
+
+
+def validate_opam_locks(package):
+    paths = sorted((package / "locks").glob("*.opam.export"))
+    if not paths:
+        raise ValueError("No frozen opam switch exports")
+    for path in paths:
+        validate_opam_sources(path)
+
+
 def initialize_opam(root, source, env):
     repository = root / "opam-repository"
     repository.mkdir()
