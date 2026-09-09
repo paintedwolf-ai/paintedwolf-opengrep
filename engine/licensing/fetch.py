@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Retrieve primary licence evidence for one component.
-
-"Primary" means the licence file inside the exact bytes that the build consumes:
-the opam source tarball named by the switch export, the wheel or sdist named by
-the pinned requirement, the pinned upstream archive, or the pinned git revision.
-Package indexes and repository metadata are recorded but never believed.
-"""
+"""Retrieve licence evidence from pinned distributions and source revisions."""
 import hashlib
 import io
 import json

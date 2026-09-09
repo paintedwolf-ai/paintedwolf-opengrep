@@ -112,11 +112,11 @@ class ReleaseTest(unittest.TestCase):
             with self.subTest(key=key):
                 inventory.write_text(json.dumps({"artifact": dict(self.identity, **{key: "stale"})}))
                 with self.assertRaisesRegex(ValueError, "Notices inventory identity differs: " + key):
-                    RELEASE.release_input_bytes(self.package, self.fixture.lock)
+                    RELEASE.release_notice_bytes(self.package, self.fixture.lock)
         inventory.write_text(json.dumps({"artifact": self.identity}))
         (self.licensing / "NOTICES-opengrep.md").write_bytes(self.notices.replace(b"paintedwolf.26", b"paintedwolf.25"))
         with self.assertRaisesRegex(ValueError, "Notices version differs"):
-            RELEASE.release_input_bytes(self.package, self.fixture.lock)
+            RELEASE.release_notice_bytes(self.package, self.fixture.lock)
 
     def test_preflight_and_pack_reject_wrong_or_missing_retained_version(self):
         for record in ({"artifact_version": "1.29.0+paintedwolf.25"},
@@ -124,7 +124,7 @@ class ReleaseTest(unittest.TestCase):
             with self.subTest(record=record):
                 self.set_retained_source(record)
                 with self.assertRaisesRegex(ValueError, "Retained source version differs"):
-                    RELEASE.release_input_bytes(self.package, self.fixture.lock)
+                    RELEASE.release_notice_bytes(self.package, self.fixture.lock)
                 with self.assertRaisesRegex(ValueError, "Retained source version differs"):
                     self.pack()
                 self.assertFalse((self.fixture.root / "release").exists())

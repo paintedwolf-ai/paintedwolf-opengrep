@@ -24,7 +24,7 @@ MAX_ARCHIVE_BYTES = 512 << 20
 MAX_EXPANDED_BYTES = 2 << 30
 
 
-def notice_bytes(package, lock):
+def release_notice_bytes(package, lock):
     version = f'{lock["upstream_version"]}+paintedwolf.{lock["patch_version"]}'
     identity = ARTIFACT.read_json(package / "licensing/inventory.json")["artifact"]
     for key, expected in (("version", version), ("revision", lock["revision"]),
@@ -33,16 +33,10 @@ def notice_bytes(package, lock):
     raw = ARTIFACT.regular(package / "licensing/NOTICES-opengrep.md").read_bytes()
     ARTIFACT.require(raw.startswith(("# Third-party notices — opengrep " + version + "\n").encode()),
                      "Notices version differs from engine")
-    return raw
-
-
-def release_input_bytes(package, lock):
-    notices = notice_bytes(package, lock)
-    version = f'{lock["upstream_version"]}+paintedwolf.{lock["patch_version"]}'
     retained = ARTIFACT.read_json(package / "locks/corresponding-source.json")
     ARTIFACT.require(retained.get("artifact_version") == version,
                      "Retained source version differs from engine")
-    return notices
+    return raw
 
 
 def validate_release_artifact(directory, package, channel, scratch):
@@ -51,6 +45,11 @@ def validate_release_artifact(directory, package, channel, scratch):
     profile = ARTIFACT.signing_module().SigningProfile.parse(provenance["signing"]["profile"], platform="darwin")
     ARTIFACT.require(channel == "prerelease" or profile.mode == "developer-id",
                      "Stable releases require Developer ID; ad-hoc builds are prereleases")
+    if channel == "stable":
+        expected = ARTIFACT.signing_module().SigningProfile.parse(
+            ARTIFACT.read_json(scratch / "inputs/signing/release-profile.json"), platform="darwin")
+        ARTIFACT.require(expected.mode == "developer-id" and profile == expected,
+                         "Artifact signer differs from the committed release policy")
     target = ARTIFACT.native_target()
     ARTIFACT.require(target == ("darwin", "arm64"), "Only native macOS arm64 release packaging is qualified")
     helper = ARTIFACT.signing_module().compile_inspector(scratch / "signature-inspector")
@@ -111,7 +110,7 @@ def pack(artifact, destination, tag, channel, package=PACKAGE):
         lock = validate_release_artifact(staged, package, channel, scratch)
         version = f'{lock["upstream_version"]}+paintedwolf.{lock["patch_version"]}'
         ARTIFACT.require(tag == "v" + version, "Release tag must match the exact engine version")
-        (staged / "NOTICES-opengrep.md").write_bytes(release_input_bytes(package, lock))
+        (staged / "NOTICES-opengrep.md").write_bytes(release_notice_bytes(package, lock))
         output = scratch / "release"
         output.mkdir()
         archive = output / ("opengrep-" + version + "-darwin-arm64.tar.gz")
@@ -139,7 +138,7 @@ def main():
         parser.error("packaging requires --artifact, --output, --tag, and --channel")
     try:
         if args.check_inputs:
-            release_input_bytes(PACKAGE, ARTIFACT.read_json(PACKAGE / "source-lock.json"))
+            release_notice_bytes(PACKAGE, ARTIFACT.read_json(PACKAGE / "source-lock.json"))
             print("Opengrep release metadata verified")
             return
         metadata = pack(args.artifact.resolve(), args.output.resolve(), args.tag, args.channel)

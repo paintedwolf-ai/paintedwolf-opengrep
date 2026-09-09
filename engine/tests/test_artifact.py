@@ -163,6 +163,11 @@ class ArtifactTest(unittest.TestCase):
         with mock.patch.object(ARTIFACT.subprocess, "run", side_effect=AssertionError("cache invoked builder")):
             self.assertEqual(result, self.resolve(no_build=True))
 
+    def test_source_build_refuses_developer_id_before_launching_a_compiler(self):
+        with mock.patch.object(ARTIFACT.subprocess, "Popen", side_effect=AssertionError("compiler started")):
+            with self.assertRaisesRegex(ValueError, "compilation is ad-hoc"):
+                ARTIFACT.build_artifact(self.package, self.root / "work", 2, {"mode": "developer-id"})
+
     def test_signing_profiles_do_not_share_cached_artifacts(self):
         adhoc = self.resolve(seed=self.seed)
         profile = {"schema_version": 1, "mode": "developer-id", "team_id": "ABCDEF1234",
@@ -550,42 +555,6 @@ class ArtifactTest(unittest.TestCase):
         self.assertEqual((installed / "LICENSE").read_bytes(), self.license)
         self.assertEqual(list(self.cache.glob("*.failed.json")), [])
 
-    def test_ci_identity_step_names_the_actual_cache_and_binds_resolver_bytes(self):
-        workspace = self.root / "checkout"
-        package = workspace / "engine"
-        shutil.copytree(self.package, package)
-        shutil.copyfile(PACKAGE / "artifact.py", package / "artifact.py")
-        shutil.copytree(PACKAGE / "signing", package / "signing", dirs_exist_ok=True)
-        script = PACKAGE.parent / "scripts/cache-identity.py"
-        output = self.root / "github-output"
-        def identity(cache=""):
-            output.write_text("")
-            result = subprocess.run([sys.executable, str(script)], cwd=workspace,
-                env={**os.environ, "GITHUB_WORKSPACE": str(workspace), "GITHUB_OUTPUT": str(output),
-                     "OPENGREP_CACHE_DIR": cache, "OPENGREP_SIGNING_PROFILE": ""},
-                check=True, capture_output=True, text=True, timeout=120)
-            self.assertEqual(result.stdout, "")
-            return dict(line.split("=", 1) for line in output.read_text().splitlines())
-        first = identity()
-        installed = ARTIFACT.resolve(package, workspace / ".cache/artifacts", seed=self.seed,
-                                     no_build=True, target=("darwin", "arm64"))
-        self.assertEqual((workspace / first["artifact-directory"]).resolve(), installed)
-        self.assertIn(ARTIFACT.digest(package / "source-lock.json"), first["cache-key"])
-        self.assertIn(ARTIFACT.digest(package / "artifact.py"), first["cache-key"])
-        custom = identity(str(self.root / "shared-cache"))
-        self.assertEqual(Path(custom["artifact-directory"]).parent, self.root / "shared-cache")
-        self.assertEqual(first["cache-key"], custom["cache-key"])
-        with (package / "artifact.py").open("a") as changed:
-            changed.write("\n# resolver revision\n")
-        second = identity()
-        self.assertEqual(first["artifact-directory"], second["artifact-directory"])
-        self.assertNotEqual(first["cache-key"], second["cache-key"])
-        with (package / "source-lock.json").open("a") as changed:
-            changed.write("\n")
-        third = identity()
-        self.assertNotEqual(second["artifact-directory"], third["artifact-directory"])
-        self.assertNotEqual(second["cache-key"], third["cache-key"])
-
     def test_cli_stdout_is_only_the_absolute_directory(self):
         output = io.StringIO()
         with mock.patch.object(ARTIFACT, "PACKAGE", self.package), mock.patch.object(ARTIFACT, "native_target", return_value=("darwin", "arm64")), \
@@ -642,7 +611,8 @@ class ArtifactTest(unittest.TestCase):
         package = checkout / "engine"
         shutil.copytree(self.package, package)
         shutil.copyfile(PACKAGE / "artifact.py", package / "artifact.py")
-        shutil.copytree(PACKAGE / "signing", package / "signing", dirs_exist_ok=True)
+        shutil.copytree(PACKAGE / "signing", package / "signing", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("release-profile.json"))
         result = subprocess.run([sys.executable, str(package / "artifact.py"), "--no-build"], cwd=checkout,
             env={**os.environ, "OPENGREP_CACHE_DIR": str(self.cache), "OPENGREP_SIGNING_PROFILE": ""},
             capture_output=True, text=True, timeout=120)

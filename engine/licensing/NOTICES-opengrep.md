@@ -1,4 +1,4 @@
-# Third-party notices — opengrep 1.30.0+paintedwolf.32
+# Third-party notices — opengrep 1.30.0+paintedwolf.33
 
 This scanner engine is a single executable that combines the works below.
 Its corresponding source is distributed with the application; see
@@ -1865,7 +1865,7 @@ at the end of this document.
 ## charset-normalizer
 
 - Licence: MIT
-- Source: https://files.pythonhosted.org/packages/71/aa/554e2614f38fc34c58ff1d0911ae8535ad2516440d5482d76fe59f1088b0/charset_normalizer-3.5.1-cp310-cp310-macosx_10_9_universal2.whl
+- Source: https://files.pythonhosted.org/packages/a4/a0/562247944386f7d4ef94467e84876600cc1e0f1b93239aaa9213d2bc3cbd/charset_normalizer-3.5.1-cp313-cp313-macosx_10_13_universal2.whl
 - Copyright (c) 2025 TAHRI Ahmed R.
 - Licence text: [4867fa6c6a50](#licence-text-4867fa6c6a50)
 
@@ -2016,7 +2016,7 @@ at the end of this document.
 ## rpds-py
 
 - Licence: MIT
-- Source: https://files.pythonhosted.org/packages/94/1f/a2dca5ffdbf1d475ffc4e80e4d5d720ff3a00f691795910116960ee12511/rpds_py-2026.6.3-cp311-cp311-macosx_10_12_x86_64.whl
+- Source: https://files.pythonhosted.org/packages/f3/6b/686d9dc4359a8f163cfbbf89ee0b4e586431de22fe8248edb63a8cf50d49/rpds_py-2026.6.3-cp313-cp313-macosx_11_0_arm64.whl
 - Copyright (c) 2023 Julian Berman
 - Licence text: [f49e5093851b](#licence-text-f49e5093851b)
 
@@ -2071,7 +2071,7 @@ at the end of this document.
 ## zstandard
 
 - Licence: BSD-3-Clause
-- Source: https://files.pythonhosted.org/packages/56/7a/28efd1d371f1acd037ac64ed1c5e2b41514a6cc937dd6ab6a13ab9f0702f/zstandard-0.25.0-cp310-cp310-macosx_10_9_x86_64.whl
+- Source: https://files.pythonhosted.org/packages/3f/06/9ae96a3e5dcfd119377ba33d4c42a7d89da1efabd5cb3e366b156c45ff4d/zstandard-0.25.0-cp313-cp313-macosx_11_0_arm64.whl
 - Copyright (c) 2016, Gregory Szorc
 - Licence text: [723767b3986a](#licence-text-723767b3986a)
 

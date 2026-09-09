@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
-"""Enumerate every component of the maintained executable from the package locks.
-
-Nothing here reaches the network. The component list is a pure function of
-`locks/`, `source-lock.json`, and the engine submodule snapshot, so two runs on
-one checkout produce identical output and a drifted lock is visible as a diff.
-"""
+"""Enumerate executable and build components from the frozen dependency inputs."""
 import json
 import pathlib
 import re
+import sys
 
 PACKAGE = pathlib.Path(__file__).resolve().parent.parent
 LICENSING = PACKAGE / "licensing"
+sys.path.insert(0, str(PACKAGE))
+from build_support.dependencies import python_distributions
 
 # opam filters that keep a package out of the linked executable.
 NOT_LINKED = re.compile(r"\{[^}]*\b(with-test|with-doc|with-dev-setup)\b[^}]*\}")
 BUILD_ONLY = re.compile(r"\{[^}]*\bbuild\b[^}]*\}")
 
-# Packages whose opam entry only probes for a system library, or whose shipped
-# artefact is a generator rather than a linked library. The underlying library
-# is inventoried in its own right; see runtimes.json and determinations.yaml.
+# System-library probes and generators do not contribute linked code.
+# Native libraries are inventoried through runtimes.json and determinations.json.
 GENERATORS = {
     "menhir": "parser generator; only menhirLib/menhirSdk link into the executable",
     "conf-gmp": "probe for GMP; the library itself is pinned in runtimes.json",
@@ -49,15 +46,12 @@ def opam_export(path):
         if url:
             src = re.search(r'src:\s*\n?\s*"([^"]+)"', url.group(1))
             sha = re.search(r"sha256=([0-9a-f]{64})", url.group(1))
-            # Older pins carry only sha512; retention verifies against whichever
-            # digest the pin actually records.
+            # Some pinned sources provide SHA-512 without SHA-256.
             sha512 = re.search(r"sha512=([0-9a-f]{128})", url.group(1))
             source = src.group(1) if src else None
             checksum = sha.group(1) if sha else None
             checksum512 = sha512.group(1) if sha512 else None
-        # A `git+` source names a revision after `#` and carries no checksum:
-        # opam has nothing to verify it against, so its bytes have to travel
-        # with the product rather than be refetched.
+        # VCS pins identify commits; retained source supplies the archive digest.
         git_source = git_revision = None
         if source and source.startswith("git+"):
             git_source, _, git_revision = source[len("git+"):].partition("#")
@@ -109,12 +103,7 @@ def engine_seeds(engine_opam_dir):
 
 
 def ocaml_components(export_path, seeds):
-    """Split the switch into what links into the executable and what does not.
-
-    Linkage is derived from opam dependency metadata, not from the built
-    binary's symbol table; `inventory.py verify-artifact` closes that gap
-    against a real artefact.
-    """
+    """Derive linkage from dependency metadata for subsequent artifact verification."""
     packages, installed = opam_export(export_path)
     reached, stack = set(), sorted(seeds)
     while stack:
@@ -150,11 +139,11 @@ def enumerate_components(package=PACKAGE, engine_submodules=None):
     lock = read_json(package / "source-lock.json")
     runtimes = read_json(package / "locks/runtimes.json")
     submodules = engine_submodules or read_json(LICENSING / "engine-submodules.json")
-    python_packages = [
-        line.strip().split("==")
-        for line in (package / "locks/python.txt").read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
+    distributions = python_distributions(package)
+    python_packages = [dict(entry, linkage="bundled", linkage_reason="locked CLI runtime dependency")
+                       for entry in distributions["runtime"]]
+    python_packages.extend(dict(entry, linkage="build-only", linkage_reason="locked Python packaging bootstrap")
+                           for entry in distributions["bootstrap"])
     return {
         "engine": {
             "name": "opengrep",
@@ -170,5 +159,5 @@ def enumerate_components(package=PACKAGE, engine_submodules=None):
         "native_libraries": runtimes["macos"]["native_libraries"],
         "tree_sitter": runtimes["tree_sitter"],
         "python_runtime": runtimes["macos"]["python"],
-        "python_packages": [{"name": name, "version": version} for name, version in python_packages],
+        "python_packages": python_packages,
     }

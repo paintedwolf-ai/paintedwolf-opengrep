@@ -325,10 +325,8 @@ def cache_lock(path):
 
 
 def build_artifact(package, root, jobs, profile):
-    profile_path = root.parent / "signing-profile.json"
-    profile_path.write_text(json.dumps(profile, sort_keys=True) + "\n")
+    require(profile["mode"] == "adhoc", "Source compilation is ad-hoc; use isolated native release stages for Developer ID artifacts")
     command = [sys.executable, str(package / "build.py"), str(root), "--jobs", str(jobs)]
-    command += ["--signing-profile", str(profile_path)]
     with (root.parent / "build.log").open("wb") as log:
         with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as process:
             for block in iter(lambda: process.stdout.read1(65536), b""):

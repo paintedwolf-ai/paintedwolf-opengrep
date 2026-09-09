@@ -8,17 +8,20 @@ import sys
 import venv
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'engine'))
+from build_support import dependencies
 
 
 def main():
-    requirements = [line.strip() for line in (ROOT / 'engine/locks/python.txt').read_text().splitlines()
-                    if line.startswith('ruamel.yaml==')]
-    if len(requirements) != 1:
+    pins = [entry for entry in dependencies.requirements(ROOT / 'engine/locks/python.txt')
+            if entry['name'] == 'ruamel.yaml']
+    if len(pins) != 1:
         raise ValueError('The engine lock must pin exactly one ruamel.yaml version')
-    requirement = requirements[0]
+    requirement = pins[0]
     cache = ROOT / '.cache'
     cache.mkdir(exist_ok=True)
-    environment = cache / ('contracts-python-' + '.'.join(map(str, sys.version_info[:2])))
+    environment = cache / ('contracts-python-' + '.'.join(map(str, sys.version_info[:2]))
+                           + '-' + requirement['sha256'])
     python = environment / 'bin/python'
     with (cache / (environment.name + '.lock')).open('a') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
@@ -26,8 +29,8 @@ def main():
             venv.EnvBuilder(with_pip=True).create(environment)
         version = subprocess.run([str(python), '-c', 'import importlib.metadata; print(importlib.metadata.version("ruamel.yaml"))'],
                                  text=True, capture_output=True)
-        if version.returncode != 0 or version.stdout.strip() != requirement.split('==')[1]:
-            subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', requirement], check=True)
+        if version.returncode != 0 or version.stdout.strip() != requirement['version']:
+            dependencies.install_contract_dependency(python, ROOT / 'engine', cache / 'contract-distributions')
     os.execv(str(python), [str(python), str(ROOT / 'engine/verify.py'), *sys.argv[1:]])
 
 

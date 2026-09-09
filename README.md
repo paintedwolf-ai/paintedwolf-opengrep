@@ -112,66 +112,108 @@ outputs before publishing the output directory. Consumers must pin the archive
 before extracting it. Notices are checked against the versioned license inventory
 and authenticated by the archive pin.
 
-Ad-hoc builds are explicitly **prereleases**. A stable release requires a
-Developer ID profile and native signature validation. To build with that profile,
-export the public signing certificate as DER, then run:
+Local source builds produce ad-hoc development artifacts. Stable releases use the
+committed [Developer ID policy](engine/signing/release-profile.json): exact Apple
+Team ID and leaf certificate SHA-256, hardened runtime, secure timestamps, and no
+entitlements on every native image. Certificate rotation is a reviewed policy
+change followed by a new engine revision. Developer ID signing does not itself
+claim Apple notarization; Painted Wolf Code notarizes its complete application.
+
+The manual `Native release` workflow uses fresh GitHub-hosted macOS arm64 runners.
+Run it at the exact version tag on a commit already reachable from `main`, with no
+existing release or draft:
 
 ```sh
-python3 engine/signing/signing.py profile --certificate signer.der --output signer.json
-export OPENGREP_SIGNING_PROFILE="$PWD/signer.json"
-export OPENGREP_SIGN_IDENTITY='Developer ID Application: Your organization (TEAMID)'
-./task build -- --jobs 2
+gh workflow run native-release.yml --ref "$RELEASE_TAG" -f operation=build
 ```
 
-The certificate's private key must already be available to `codesign`. Signing
-happens during the native build, before provenance is produced; ad-hoc and
-Developer ID caches have distinct identities. Do not sign the final artifact in
-place. Developer ID qualification does not itself claim Apple notarization.
-Signing changes the executable and its provenance: when credentials become
-available, build a new engine revision and version tag. An already published
-ad-hoc prerelease must remain ad-hoc; do not replace its assets or relabel it stable.
+The workflow verifies tag, source commit, workflow commit and repository identity
+before building. Its isolated stages are:
 
-The manual `Native release` workflow uses GitHub's [macOS arm64 runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
-checks the source and tests, builds or validates a native cache, and publishes a
-draft release for review. Run it at an existing version tag with no release or
-draft yet, for example:
+1. Compile and qualify an ad-hoc engine, without Apple credentials or write tokens.
+2. Import the approved certificate in the protected `signing` environment; sign
+   embedded images without running artifact code or a compiler; delete the keychain.
+3. Use the hash-pinned Nuitka compressor and bootstrap compiler on a fresh runner
+   to package those signed bytes without signing credentials.
+4. Sign the outer executable in another protected signing job, then remove the key.
+5. On a fresh runner, verify native signatures and platform dependencies, run every
+   frozen contract against the final executable, and regenerate qualification facts.
+6. In the protected `release` environment, verify the artifact again, attest the
+   archive, descriptor and build evidence, and create a complete draft.
+
+Jobs exchange bounded, digest-checked handoffs through immutable Actions artifact
+IDs from the same run and attempt. No completed engine cache is reused for a
+release. Python distributions and bootstrap tools are downloaded by exact URL,
+size and SHA-256, then installed offline with hashes and no dependency resolution.
+Grammar generators are pinned as both compressed archives and executable bytes.
+The complete opam switch imports against an empty local repository with required
+checksums. Runner image and compiler/tool versions are recorded in build evidence;
+the hosted image and system toolchain are not claimed to be reproducible.
+
+Only the publication job has `contents: write`, `id-token: write` and
+`attestations: write`. Its GitHub artifact attestation binds the reviewed source
+and workflow commit; build evidence separately identifies the earlier compile job
+and unsigned handoff. This is provenance, not a claim of byte-for-byte
+reproducibility or formal SLSA certification.
+
+Configure `APPLE_CERTIFICATE` (base64 PKCS#12), `APPLE_CERTIFICATE_PASSWORD`, and
+`APPLE_SIGNING_IDENTITY` as secrets of the `signing` environment. The identity is
+the complete `Developer ID Application: ... (TEAMID)` name. The workflow imports
+the PKCS#12 using Apple's `security` tool and refuses a certificate that differs
+from the committed policy. To check credentials without building, use a version
+tag whose source is already on `main` (it may already have a release):
 
 ```sh
-gh workflow run native-release.yml --ref "$RELEASE_TAG" -f channel=stable
+gh workflow run native-release.yml --ref "$RELEASE_TAG" -f operation=check-signing
 ```
 
-Stable mode uses `APPLE_CERTIFICATE` (base64 PKCS#12 exported from Keychain Access),
-`APPLE_CERTIFICATE_PASSWORD`, and `APPLE_SIGNING_IDENTITY` repository secrets (or
-organization secrets granted to this repository). Set
-the identity to the complete certificate name, such as `Developer ID Application:
-Your organization (TEAMID)`. The workflow imports the PKCS#12 with Apple's
-`security` tool and reads the public certificate from that keychain, avoiding
-[OpenSSL's legacy PKCS#12 cipher incompatibility](https://docs.openssl.org/3.5/man1/openssl-pkcs12/).
-Prerelease builds need no signing credentials. To validate the credentials before
-starting an engine build, dispatch the same workflow on `main`:
-
-```sh
-gh workflow run native-release.yml --ref main -f operation=check-signing
-```
-
-This operation imports the key, compiles and signs the small native signature
-inspector with hardened runtime and a secure timestamp, and verifies its exact
-certificate and Team ID using the release signing policy. It requires no version
-tag, does not access the artifact cache or build the engine, and publishes no
-release. The temporary signing keychain is removed even if validation fails.
+This operation compiles the trusted inspector before importing the key, signs it,
+and verifies its exact certificate, Team ID, hardened runtime and timestamp. It
+publishes no release. The temporary keychain is removed even if validation fails.
 
 A failed upload can leave a draft. The workflow refuses an existing release or
-draft before building and never overwrites its assets. Inspect a partial draft
-and finish uploading the exact qualified files, or explicitly delete that
-unpublished draft before retrying the workflow. Published releases and their tags
-stay unchanged. Each GitHub-hosted job has a [six-hour limit](https://docs.github.com/en/actions/reference/limits);
-a cold native build that exceeds it needs local qualification. Only complete,
-verified artifacts are cached; unfinished build directories are not resumed.
+draft before building and never overwrites its assets. Inspect a partial draft;
+delete an unpublished failed draft before retrying if necessary. Rerun **all
+jobs**: a later attempt may not reuse an earlier attempt's build handoff. Published
+immutable releases and their tags stay unchanged. Each GitHub-hosted job has a
+[six-hour limit](https://docs.github.com/en/actions/reference/limits); a timeout
+requires a build performance fix or an explicitly redesigned pipeline, not a
+locally built substitute with a new hosted-build attestation.
 
 Publish the reviewed draft only after the exact signed artifact passes its frozen
-contracts and payload verification. Portable CI checks packaging only and does
+contracts and payload verification. The draft must contain exactly the archive,
+`release.json`, `build-evidence.json`, and `provenance.sigstore.json`. Immutable
+releases must be enabled **before** publication. GitHub creates a separate release
+attestation when the draft is published; new consumer selection verifies both the
+workflow provenance and immutable-release membership. Portable CI checks packaging only and does
 not claim Linux engine support. A Linux development replay can exercise semantics
 without qualifying the macOS release's executable, signing, or deployment target.
+
+## GitHub release controls
+
+In Settings → Environments, create `signing` and `release`. Enable **Required
+reviewers**, select the release operator, leave **Prevent self-review** unchecked,
+and disable administrator bypass. Under **Selected branches and tags**, add a
+**Tag** rule for `v*` (no branch rule). Move the three Apple secrets
+to `signing` and revoke this repository's access to their organization-level
+copies; environment secrets alone do not remove broader secret access.
+
+In Settings → Rules → Rulesets, activate a `main` branch ruleset requiring pull
+requests and the `check` status from GitHub Actions; block deletion and force
+pushes. Set required PR approvals to zero for this single-maintainer repository.
+For `v*`, use a tag-integrity ruleset restricting updates and deletions with no
+bypass actors. Use a separate tag-creation ruleset restricting creations, with
+only the release operator's role/team allowed to bypass that creation rule.
+Separating them prevents permission to create a tag from also allowing it to be
+rewritten. Keep immutable releases enabled. These controls complement the
+in-workflow checks; merely naming an environment in YAML does not configure its
+protection rules. See GitHub's [environment controls](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+and [available rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets).
+
+After publishing a new immutable release, select it in Painted Wolf Code using
+the exact tag and independently reviewed full producer commit. Commit its pin and
+retained attestation evidence together. Ordinary local builds continue to use the
+checked-in pin and verified cache without GitHub access or engine compilation.
 
 ## Analysis qualification
 

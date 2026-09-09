@@ -15,7 +15,15 @@ import sys
 import tempfile
 import uuid
 
+
 PACKAGE = Path(__file__).resolve().parent
+
+
+def dependency_support(package):
+    spec = importlib.util.spec_from_file_location("opengrep_build_dependencies", package / "build_support/dependencies.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def run(args, cwd, env=None):
@@ -98,13 +106,14 @@ def checkout(url, revision, path):
 
 def snapshot_package(package, destination):
     for relative in ("source-lock.json", "build.py", "verify.py", "patches", "source", "locks", "build_support",
-                     "signing", "signing/signing.py", "signing/native_signatures.m"):
+                     "signing", "signing/signing.py", "signing/native_signatures.m", "signing/release-profile.json"):
         if (package / relative).is_symlink():
             raise RuntimeError(f"Source package contains a symlink: {relative}")
     lock_bytes = (package / "source-lock.json").read_bytes()
     lock = json.loads(lock_bytes)
     inputs = [path for path in (package / "build.py", package / "verify.py",
-                               package / "signing/signing.py", package / "signing/native_signatures.m") if path.is_file()]
+                               package / "signing/signing.py", package / "signing/native_signatures.m",
+                               package / "signing/release-profile.json") if path.is_file()]
     for folder in ("patches", "source", "locks", "build_support"):
         for path in (package / folder).rglob("*"):
             if path.is_symlink():
@@ -134,6 +143,7 @@ def snapshot_package(package, destination):
 
 
 def prepare(root, package, lock):
+    dependencies = dependency_support(package)
     source = root / "engine"
     checkout(lock["upstream"], lock["revision"], source)
     run(["git", "submodule", "update", "--init", "--recursive", "--jobs", "2"], source)
@@ -153,7 +163,10 @@ def prepare(root, package, lock):
         patch = grammar_patch(package, grammar)
         if patch is not None:
             run(["git", "apply", str(patch)], path)
-        run(["npm", "exec", "--yes", "--package=" + grammar["generator"], "--", "tree-sitter", "generate", "--abi", str(grammar["abi"])], path)
+        system = {"Darwin": "macos", "Linux": "linux"}.get(platform.system())
+        architecture = {"aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine(), platform.machine())
+        generator = dependencies.grammar_generator(package, root / "generators", grammar["generator"], f"{system}-{architecture}")
+        run([str(generator), "generate", "--abi", str(grammar["abi"])], path)
         for relative, expected in grammar["generated_files"].items():
             relative_path = PurePosixPath(relative)
             if relative_path.is_absolute() or ".." in relative_path.parts:
@@ -180,15 +193,20 @@ def grammar_patch(package, grammar):
 
 
 def build(root, package, source, lock, jobs, python, signing, profile):
+    if profile.mode != "adhoc":
+        raise RuntimeError("Native compilation requires ad-hoc signing; use the isolated native release stages for Developer ID")
+    dependencies = dependency_support(package)
     temporary = root / "tmp"
     temporary.mkdir(mode=0o700, exist_ok=True)
     env = dict(os.environ, OPAMROOT=str(root / "opam"), OPAMJOBS=str(jobs),
-               PIP_DISABLE_PIP_VERSION_CHECK="1", TMPDIR=str(temporary.resolve()))
+               PIP_DISABLE_PIP_VERSION_CHECK="1", TMPDIR=str(temporary.resolve()),
+               OPAMREQUIRECHECKSUMS="true", OPAMNOCHECKSUMS="false", OPAMNOSELFUPGRADE="true")
     architecture = {"aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine(), platform.machine())
     system = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}.get(platform.system())
     dependency_lock = package / "locks" / f"{system}-{architecture}.opam.export"
     if not dependency_lock.exists():
         raise RuntimeError(f"No qualified OCaml dependency lock for {system}/{architecture}")
+    dependencies.fetch_python(package, root / "dependencies")
     runtime_driver = package / "build_support/runtime.py"
     runtime_lock = package / "locks/runtimes.json"
     if system == "macos":
@@ -201,8 +219,8 @@ def build(root, package, source, lock, jobs, python, signing, profile):
         python = runtime["python"]
     else:
         python = python or "python3.13"
-    run(["opam", "init", "--bare", "--no-setup", "--disable-sandboxing", "-y"], source, env)
-    run(["opam", "switch", "create", ".", "--empty", "-y"], source, env)
+    dependencies.initialize_opam(root, source, env)
+    run(["opam", "switch", "create", ".", "--empty", "--no-install", "-y"], source, env)
     run(["opam", "switch", "import", str(dependency_lock), "-y", "--assume-depexts"], source, env)
     run([sys.executable, str(runtime_driver), "tree-sitter", str(source / "libs/ocaml-tree-sitter-core"), str(runtime_lock)], source, env)
     # The upstream configure step produces the tree-sitter include/library paths.
@@ -214,15 +232,13 @@ def build(root, package, source, lock, jobs, python, signing, profile):
     venv = root / "python"
     run([python, "-m", "venv", str(venv)], source, env)
     py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    run([str(py), "-m", "pip", "install", "pip==26.0.1", "setuptools==80.9.0", "wheel==0.45.1"], source, env)
-    run([str(py), "-m", "pip", "install", "-r", str(package / "locks/python.txt")], source, env)
-    run([str(py), "-m", "pip", "install", "--no-build-isolation", "--no-deps", "-e", "./cli"], source, env)
+    dependencies.install_python(py, package, root / "dependencies", env=env)
+    run([str(py), "-I", "-m", "pip", "--isolated", "install", "--no-index", "--no-build-isolation", "--no-deps", "-e", "./cli"], source, env)
     env["PYTHON_BIN"] = str(py)
     env["NUITKA_JOBS"] = str(jobs)
     build_id = "paintedwolf-" + digest(package / "source-lock.json") + "-" + profile.digest() + "-" + uuid.uuid4().hex
     env["OPENGREP_BUILD_ID"] = build_id
-    if profile.mode != "developer-id":
-        env.pop("OPENGREP_SIGN_IDENTITY", None)
+    env.pop("OPENGREP_SIGN_IDENTITY", None)
     version = "v" + lock["upstream_version"] + "." + str(lock["patch_version"])
     run(["bash", "scripts/build-nuitka.sh", version, "true", "src/semgrep"], source, env)
     binary = source / "cli" / ("opengrep.exe" if os.name == "nt" else "opengrep")
@@ -259,7 +275,6 @@ def main():
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--python", help="Python interpreter for non-macOS builds")
-    parser.add_argument("--signing-profile", type=Path)
     args = parser.parse_args()
     if args.check:
         if args.directory or args.prepare_only:
@@ -284,9 +299,7 @@ def main():
     signing = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = signing
     spec.loader.exec_module(signing)
-    profile = signing.SigningProfile.parse(json.loads(args.signing_profile.read_text()) if args.signing_profile else None)
-    if profile.mode == "developer-id" and not os.environ.get("OPENGREP_SIGN_IDENTITY"):
-        parser.error("Developer ID builds require OPENGREP_SIGN_IDENTITY")
+    profile = signing.SigningProfile.parse(None)
     source = prepare(root, package, lock)
     retained = root / "third-party"
     run([sys.executable, str(package / "build_support/corresponding_source.py"), str(retained),

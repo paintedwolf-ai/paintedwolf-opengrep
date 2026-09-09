@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify a completed native build again without compiling or changing its inputs."""
+"""Requalify immutable completed native inputs."""
 import argparse
 import importlib.util
 import json
@@ -83,7 +83,7 @@ def inspect_runtime(scratch, package, cli, profile, env):
     runtime.validate_macos(cli, target)
     helper = signing.compile_inspector(scratch / "signature-inspector")
     capacity = signing.execution_support().TestCapacity.detect()
-    result = signing.run_test_process([str(cli / "opengrep"), "--version"], env=env, cwd=scratch,
+    result = signing.execution_support().run_test_process([str(cli / "opengrep"), "--version"], env=env, cwd=scratch,
                                       timeout=capacity.deadline(120))
     ARTIFACT.require(not result.timed_out and result.returncode == 0, "Completed executable version check failed")
     extracted = list((scratch / "cache/opengrep").iterdir())

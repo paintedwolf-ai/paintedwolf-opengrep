@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Identify a licence from its own text rather than from packaging metadata.
-
-Package metadata is not authoritative: ocamlgraph 2.2.0 declares plain
-"LGPL-2.1-only" in opam while its own LICENSE carries a linking exception.
-"""
+"""Identify licences and linking exceptions from their source text."""
 import re
 
 # Exception clauses are recognised first so a linking exception is never lost.
