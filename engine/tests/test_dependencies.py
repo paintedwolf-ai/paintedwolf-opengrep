@@ -231,5 +231,70 @@ class PythonLicenseEvidenceTest(unittest.TestCase):
             self.assertEqual(self.inventory.check(None), 1)
 
 
+class RetainedSourceMetadataTest(unittest.TestCase):
+    def test_archive_commit_metadata_does_not_select_git_transport(self):
+        spec = importlib.util.spec_from_file_location("retained_inventory", PACKAGE / "licensing/inventory.py")
+        inventory = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(inventory)
+        component = {"id": "ocaml/example", "group": "ocaml", "license": "LGPL-3.0",
+                     "obligations": ["source-offer"], "provenance": {
+                         "url": "https://example.test/source.tar.gz", "revision": "a" * 40,
+                         "pinned_sha256": "b" * 64}}
+        document = {"artifact": {"version": "1.0.0"}, "components": [component]}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "locks").mkdir()
+            with mock.patch.object(inventory, "HERE", root / "licensing"), \
+                    mock.patch.object(inventory, "load", return_value=document), \
+                    mock.patch.object(inventory.sources, "opam_export", return_value=({}, set())), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(inventory.retained_lock(None), 0)
+            retained = json.loads((root / "locks/corresponding-source.json").read_text())["retained"][0]
+        self.assertEqual(retained["url"], component["provenance"]["url"])
+        self.assertEqual(retained["sha256"], "b" * 64)
+        self.assertIsNone(retained["revision"])
+
+
+class OpamSourcePinTest(unittest.TestCase):
+    def validate(self, body, extra=""):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "switch.export"
+            path.write_text('package "example" {\n  url {\n' + body + '\n  }\n' + extra + '}\n')
+            DEPS.validate_opam_sources(path)
+
+    def test_all_frozen_sources_have_archive_checksums(self):
+        DEPS.validate_opam_locks(PACKAGE)
+
+    def test_sha256_and_sha512_archives_are_accepted(self):
+        for algorithm, length in (("sha256", 64), ("sha512", 128)):
+            with self.subTest(algorithm=algorithm):
+                self.validate('    src:\n      "https://example.test/source.tar.gz"\n'
+                              f'    checksum: ["{algorithm}={"a" * length}"]')
+
+    def test_missing_weak_and_malformed_checksums_are_rejected(self):
+        for checksum in ("", '    checksum: "md5=' + "a" * 32 + '"',
+                         '    checksum: "sha256=' + "a" * 63 + '"',
+                         '    checksum: []'):
+            with self.subTest(checksum=checksum), self.assertRaises(ValueError):
+                self.validate('    src: "https://example.test/source.tar.gz"\n' + checksum)
+
+    def test_git_and_local_sources_cannot_bypass_archive_verification(self):
+        for url in ("git+https://example.test/source.git#" + "a" * 40, "file:///tmp/source"):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "HTTP archive"):
+                self.validate(f'    src: "{url}"\n    checksum: "sha256={"a" * 64}"')
+
+    def test_extra_sources_require_their_own_checksum(self):
+        with self.assertRaises(ValueError):
+            self.validate('    src: "https://example.test/source.tar.gz"\n'
+                          f'    checksum: "sha256={"a" * 64}"',
+                          '  extra-source "patch.diff" {\n    src: "https://example.test/patch.diff"\n  }\n')
+
+    def test_unrecognized_source_layout_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "section layout"):
+            self.validate('    src: "https://example.test/source.tar.gz"\n'
+                          f'    checksum: "sha256={"a" * 64}"',
+                          '  extra-source "patch.diff" { src: "https://example.test/patch.diff" }\n')
+
+
 if __name__ == "__main__":
     unittest.main()

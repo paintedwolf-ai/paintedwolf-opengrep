@@ -2,7 +2,7 @@
   "upstream": "https://github.com/opengrep/opengrep.git",
   "revision": "acf67b45c97c4b63626536605c77064ef536806d",
   "upstream_version": "1.30.0",
-  "patch_version": 34,
+  "patch_version": 35,
   "interfaces_revision": "5e705660dc7381d4c4c247fa83c4c5860e61d555",
   "grammars": [
     {
@@ -75,9 +75,9 @@
     }
   ],
   "files": {
-    "build.py": "f90dcc0d6354a88701da4c958b10b48b942cf8a5cba012e612fa42c48aa2a3c1",
+    "build.py": "f9574b8a246dbe9e20f5d8858b42c20c2158c79100a113e4228458f62bc1603d",
     "build_support/corresponding_source.py": "b3fbfc8484ad3a1ff050af617e5259373f4f4a3dc4c52d009162cae3c6b43621",
-    "build_support/dependencies.py": "9c0bc239d17cc6306a83c02cc4da1f35699c2c739d08b90fefa80f8121a190e1",
+    "build_support/dependencies.py": "c9dbed8acfca8fd8dcbdd14be0abef027f42abb1ab60ce92f5d22df84856e7c0",
     "build_support/handoff.py": "7f31885ac97e8f7b9824e74831c34ce94b49fee8e7a6a171b416bacfb2f8ecc5",
     "build_support/native_release.py": "6673843ab5eb78f9821d61d1a3df7aee8fa0b8deda44e9272ac14f5f3195f099",
     "build_support/onefile.py": "e0455d16328ec044787f0e182d382d846e66bc32f580f0d62ab5748f8ed30636",
@@ -85,9 +85,9 @@
     "build_support/scanner_report.py": "6e7d03b631e0052a35eba1af3eb7439aba647249f88c98f05a75820f19d498f0",
     "build_support/source_archive.py": "e991099ca4dc7df0f564299cda2dbd294f94ad72bab785bdc427773a4e7c4a27",
     "build_support/test_execution.py": "39c32b93754c2754486d059d3886e1811c15004ccf02958c6fc12ace7f8a20ca",
-    "locks/corresponding-source.json": "97eb5a909ad77ddba980b243bb6f32a14388e8393a855fb3e3fff8bfbccb56b5",
+    "locks/corresponding-source.json": "72678cee01807593d84fcedb91fd29c0f812d00eb30ed663f155ee693742de57",
     "locks/dependencies.json": "08e9d79ec5e13a53145c78a7d0e5b1e9897a7db1382e6990982673b4d3b5de5d",
-    "locks/macos-arm64.opam.export": "360b5041dbda4fc4408ee5964f5b578249b4c088e3c243805990293d87355f3b",
+    "locks/macos-arm64.opam.export": "65dc842cfdf2503f7ef9a461c92cfb21bdc439f13869c7e4ef64a15586b96f0e",
     "locks/python-bootstrap.txt": "7ddfe6802c54fc715d94702cb07f4966a7e7580058da1909add0334f65b6250b",
     "locks/python.txt": "7128480ef573367dbc21be43c047b1565ab7f8eb860af3b7b11a2c0568917dba",
     "locks/runtimes.json": "df8a9e1c4797e91be095906f97c341f7a08a50f4f9aabb732230b8bf6e76c013",

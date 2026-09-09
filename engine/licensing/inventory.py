@@ -522,7 +522,7 @@ def retained_lock(args):
             "id": component["id"], "license": component["license"],
             "obligations": component["obligations"],
             "url": provenance.get("url") or provenance.get("git"),
-            "revision": provenance.get("revision"),
+            "revision": None if provenance.get("url") else provenance.get("revision"),
             "sha256": provenance.get("pinned_sha256") or provenance.get("sha256")
                       or pinned.get("source_sha256"),
             "sha512": pinned.get("source_sha512"),

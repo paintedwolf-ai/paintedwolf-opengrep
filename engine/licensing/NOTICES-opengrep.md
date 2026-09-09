@@ -1,4 +1,4 @@
-# Third-party notices — opengrep 1.30.0+paintedwolf.34
+# Third-party notices — opengrep 1.30.0+paintedwolf.35
 
 This scanner engine is a single executable that combines the works below.
 Its corresponding source is distributed with the application; see
@@ -872,7 +872,7 @@ at the end of this document.
 ## memprof-limits-dev
 
 - Licence: LGPL-3.0 WITH LGPL-3.0-linking-exception
-- Source: https://gitlab.com/dimitris-m/memprof-limits.git at `c2cced325a93d2271379f0712db85867b29dbee1`
+- Source: https://gitlab.com/dimitris-m/memprof-limits/-/archive/c2cced325a93d2271379f0712db85867b29dbee1/memprof-limits-c2cced325a93d2271379f0712db85867b29dbee1.tar.gz at `c2cced325a93d2271379f0712db85867b29dbee1`
 - Copyright (C) 2007 Free Software Foundation, Inc. <http://fsf.org/>
 - Copyright (c) 2020 INRIA
 - Licence text: [0ed2022f7f20](#licence-text-0ed2022f7f20)
