@@ -271,7 +271,9 @@ def validate_signing_record(record, profile, binary_sha256, binary_bytes):
     """Validate recorded policy and image equality; native reuse checks remain separate."""
     if not isinstance(record, dict) or set(record) != {"profile", "profile_sha256", "outer", "standalone", "extracted"}:
         raise SigningError("Malformed build signing record")
-    if record["profile"] != profile.record() or SigningProfile.parse(record["profile"], platform="darwin") != profile or record["profile_sha256"] != profile.digest():
+    recorded_profile = SigningProfile.parse(record["profile"], platform="darwin")
+    if (record["profile"] != profile.record() or recorded_profile.digest() != profile.digest()
+            or record["profile_sha256"] != profile.digest()):
         raise SigningError("Build signing record differs from requested profile")
     validate_inspection(record["outer"], profile, binary_sha256, binary_bytes)
     for key in ("standalone", "extracted"):

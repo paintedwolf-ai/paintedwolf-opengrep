@@ -61,6 +61,22 @@ class ProfileTests(unittest.TestCase):
 
 
 class InspectionTests(unittest.TestCase):
+    def test_equivalent_profiles_from_independent_modules(self):
+        spec = importlib.util.spec_from_file_location("independent_signing", Path(__file__).with_name("signing.py"))
+        independent = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = independent
+        self.addCleanup(sys.modules.pop, spec.name)
+        spec.loader.exec_module(independent)
+        for developer in (False, True):
+            with self.subTest(developer=developer):
+                selected = independent.SigningProfile.parse(profile(developer).record(), platform="darwin")
+                self.assertIsNot(type(selected), SIGNING.SigningProfile)
+                record = signing_record(developer)
+                SIGNING.validate_signing_record(record, selected, record["outer"]["sha256"], record["outer"]["bytes"])
+                record["profile_sha256"] = "b" * 64
+                with self.assertRaises(SIGNING.SigningError):
+                    SIGNING.validate_signing_record(record, selected, record["outer"]["sha256"], record["outer"]["bytes"])
+
     def test_both_valid_profiles(self):
         for developer in (False, True):
             record = signing_record(developer)
