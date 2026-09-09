@@ -233,6 +233,63 @@ class NativeSigningBoundaryTest(unittest.TestCase):
         prepare.assert_called_once_with(output.resolve())
 
 
+class QualificationDiagnosticsTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.scratch = self.root / "scratch"
+        self.scratch.mkdir()
+        self.diagnostics = self.root / "diagnostics"
+
+    def test_retention_bounds_logs_and_excludes_payloads_and_symlinks(self):
+        log = b"a" * (5 * 1024 * 1024) + b"last diagnostic"
+        (self.scratch / "contracts.stderr.log").write_bytes(log)
+        (self.scratch / "contracts.jsonl").write_text('{"passed":false}\n')
+        (self.scratch / "opengrep").write_bytes(b"large executable")
+        (self.scratch / "version.stdout.log").symlink_to("opengrep")
+        NATIVE.retain_diagnostics(self.scratch, self.diagnostics, ValueError("contract failure"))
+        report = json.loads((self.diagnostics / "failure.json").read_text())
+        self.assertEqual(report["error_type"], "ValueError")
+        self.assertEqual(report["error"], "contract failure")
+        self.assertEqual(set(self.diagnostics.iterdir()), {
+            self.diagnostics / name for name in ("failure.json", "contracts.stderr.log", "contracts.jsonl")})
+        self.assertEqual((self.diagnostics / "contracts.stderr.log").read_bytes(), log[-4 * 1024 * 1024:])
+        self.assertEqual(report["files"]["contracts.stderr.log"], {
+            "bytes": len(log), "retained_bytes": 4 * 1024 * 1024, "truncated": True})
+
+    def test_verification_failure_retains_report_without_publishing_artifact(self):
+        output = self.root / "artifact"
+        with mock.patch.object(NATIVE.tempfile, "mkdtemp", return_value=str(self.scratch)), \
+                mock.patch.object(NATIVE, "artifact_module"), \
+                mock.patch.object(NATIVE.HANDOFF, "read", side_effect=ValueError("invalid handoff")), \
+                self.assertRaisesRegex(ValueError, "invalid handoff"):
+            NATIVE.verify(self.root / "handoff.tar.gz", output, None, self.diagnostics)
+        self.assertFalse(output.exists())
+        self.assertEqual(json.loads((self.diagnostics / "failure.json").read_text())["error"], "invalid handoff")
+
+    def test_diagnostic_write_failure_does_not_mask_qualification_error(self):
+        with mock.patch.object(NATIVE.tempfile, "mkdtemp", return_value=str(self.scratch)), \
+                mock.patch.object(NATIVE, "artifact_module"), \
+                mock.patch.object(NATIVE.HANDOFF, "read", side_effect=ValueError("invalid handoff")), \
+                mock.patch.object(NATIVE, "retain_diagnostics", side_effect=OSError("disk full")), \
+                self.assertRaisesRegex(ValueError, "invalid handoff"):
+            NATIVE.verify(self.root / "handoff.tar.gz", self.root / "artifact", None, self.diagnostics)
+
+    def test_failed_version_execution_preserves_exit_state_and_output(self):
+        result = SimpleNamespace(returncode=7, timed_out=False, stdout="version output", stderr="launch failed")
+        with mock.patch.object(NATIVE, "module", return_value=mock.Mock()), \
+                mock.patch.object(NATIVE.SIGNING, "compile_inspector"), \
+                mock.patch.object(NATIVE.SIGNING, "inspect_image"), \
+                mock.patch.object(NATIVE.SIGNING, "inspect_inventory"), \
+                mock.patch.object(NATIVE.SIGNING.execution_support(), "run_test_process", return_value=result), \
+                self.assertRaisesRegex(ValueError, "version check failed"):
+            NATIVE.inspect(self.scratch, self.root / "cli", None, {}, "paintedwolf-" + "a" * 64)
+        self.assertEqual((self.scratch / "version.stdout.log").read_text(), result.stdout)
+        self.assertEqual((self.scratch / "version.stderr.log").read_text(), result.stderr)
+        self.assertEqual(json.loads((self.scratch / "version.json").read_text()), {"returncode": 7, "timed_out": False})
+
+
 class SigningCredentialHelperTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

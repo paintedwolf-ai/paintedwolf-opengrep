@@ -153,6 +153,35 @@ class ArtifactTest(unittest.TestCase):
     def assert_unpublished(self):
         self.assertEqual([p for p in self.cache.glob("*") if p.is_dir() and not p.name.startswith(".")], [])
 
+    def test_native_export_uses_real_artifact_admission(self):
+        spec = importlib.util.spec_from_file_location("export_admission", PACKAGE / "build_support/native_release.py")
+        native = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(native)
+        build = self.root / "compiled"
+        distribution = build / "engine/cli/entrypoint.dist"
+        images = []
+        for name in ("opengrep.bin", "semgrep/bin/opengrep-core"):
+            path = distribution / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            raw = bytes.fromhex("cffaedfe") + name.encode()
+            path.write_bytes(raw)
+            path.chmod(0o755)
+            images.append({"path": name, **signing_fixture(raw)["outer"]})
+        self.provenance["signing"].update(standalone=images, extracted=images)
+        self.refresh_provenance()
+        shutil.copytree(self.seed, build / "artifact")
+        (build / "inputs").mkdir()
+        shutil.copyfile(self.package / "source-lock.json", build / "inputs/source-lock.json")
+        output = self.root / "handoff.tar.gz"
+        with mock.patch.object(native, "PACKAGE", self.package), \
+                mock.patch.object(native, "artifact_module", return_value=ARTIFACT):
+            native.export(build, output)
+            root = self.root / "exported"
+            native.HANDOFF.read(output, root, native.lock_hash(), "compiled")
+        self.assertEqual((root / "artifact/LICENSE").read_bytes(), self.license)
+        self.assertEqual((root / "artifact/opengrep").read_bytes(), self.binary)
+        self.assertFalse((build / "artifact/LICENSE").exists())
+
     def test_seed_derives_license_and_cache_never_rebuilds(self):
         (self.seed / "additional-evidence.json").write_text("{}")
         result = self.resolve(seed=self.seed, no_build=True)

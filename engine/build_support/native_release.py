@@ -134,6 +134,9 @@ def inspect(scratch, cli, profile, env, build_id):
     capacity = SIGNING.execution_support().TestCapacity.detect()
     result = SIGNING.execution_support().run_test_process([str(cli / "opengrep"), "--version"], cwd=scratch, env=env,
                                       timeout=capacity.deadline(120))
+    (scratch / "version.stdout.log").write_text(result.stdout)
+    (scratch / "version.stderr.log").write_text(result.stderr)
+    write_json(scratch / "version.json", {"returncode": result.returncode, "timed_out": result.timed_out})
     HANDOFF.require(not result.timed_out and result.returncode == 0, "Final native version check failed")
     extracted = scratch / "cache/opengrep" / build_id
     HANDOFF.require(extracted.is_dir() and not extracted.is_symlink()
@@ -142,6 +145,7 @@ def inspect(scratch, cli, profile, env, build_id):
     extracted_images = SIGNING.inspect_inventory(helper, extracted, profile, required=REQUIRED)
     record = {"profile": profile.record(), "profile_sha256": profile.digest(), "outer": outer,
               "standalone": standalone, "extracted": extracted_images}
+    write_json(scratch / "signing.json", record)
     SIGNING.validate_signing_record(record, profile, HANDOFF.digest(cli / "opengrep"), (cli / "opengrep").stat().st_size)
     return helper, record, result.stdout.strip(), extracted
 
@@ -167,9 +171,27 @@ def contracts(binary, report, scratch, env):
     HANDOFF.require(code == 0, "Frozen native contracts failed; see " + str(scratch / "contracts.stderr.log"))
 
 
-def verify(input_path, output, profile):
+def retain_diagnostics(scratch, output, error):
+    output.mkdir(parents=True)
+    files = {}
+    for name in ("version.stdout.log", "version.stderr.log", "version.json", "signing.json",
+                 "contracts.jsonl", "contracts.stderr.log", "handoff/cli/platform-checks.json"):
+        source = scratch / name
+        if source.is_symlink() or not source.is_file():
+            continue
+        with source.open("rb") as stream:
+            size = stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, size - 4 * 1024 * 1024))
+            data = stream.read(4 * 1024 * 1024)
+        (output / source.name).write_bytes(data)
+        files[source.name] = {"bytes": size, "retained_bytes": len(data), "truncated": size > len(data)}
+    write_json(output / "failure.json", {"error_type": type(error).__name__, "error": str(error), "files": files})
+
+
+def verify(input_path, output, profile, diagnostics):
     artifact = artifact_module()
     HANDOFF.require(not output.exists() and not output.is_symlink(), "Qualification output must be new")
+    HANDOFF.require(not diagnostics.exists() and not diagnostics.is_symlink(), "Diagnostics output must be new")
     scratch = Path(tempfile.mkdtemp(prefix="native-verify-")).resolve()
     print("Qualification workspace: " + str(scratch), file=sys.stderr, flush=True)
     try:
@@ -209,7 +231,11 @@ def verify(input_path, output, profile):
                                    inspect=lambda path: SIGNING.inspect_image(helper, path, profile))
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(artifacts, output)
-    except BaseException:
+    except BaseException as error:
+        try:
+            retain_diagnostics(scratch, diagnostics, error)
+        except OSError as diagnostic_error:
+            print("Could not retain qualification diagnostics: " + str(diagnostic_error), file=sys.stderr)
         print("Qualification failed; retained workspace: " + str(scratch), file=sys.stderr, flush=True)
         raise
     shutil.rmtree(scratch)
@@ -238,6 +264,8 @@ def main():
         command.add_argument("--output", type=Path, required=True)
         if name != "package":
             command.add_argument("--signing-profile", type=Path, required=True)
+        if name == "verify":
+            command.add_argument("--diagnostics", type=Path, required=True)
         if name.startswith("sign-"):
             command.add_argument("--inspector", type=Path, required=True)
             command.add_argument("--identity")
@@ -254,7 +282,7 @@ def main():
         else:
             profile = SIGNING.SigningProfile.parse(json.loads(args.signing_profile.read_text()))
             if args.command == "verify":
-                verify(args.input.resolve(strict=True), args.output.resolve(), profile)
+                verify(args.input.resolve(strict=True), args.output.resolve(), profile, args.diagnostics.resolve())
             else:
                 sign(args.input.resolve(strict=True), args.output.resolve(), args.inspector.resolve(strict=True), profile,
                      args.identity, args.keychain, outer=args.command == "sign-outer")

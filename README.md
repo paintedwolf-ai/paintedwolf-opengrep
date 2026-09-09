@@ -185,7 +185,22 @@ contracts and payload verification. The draft must contain exactly the archive,
 `release.json`, `build-evidence.json`, and `provenance.sigstore.json`. Immutable
 releases must be enabled **before** publication. GitHub creates a separate release
 attestation when the draft is published; new consumer selection verifies both the
-workflow provenance and immutable-release membership. Portable CI checks packaging only and does
+workflow provenance and immutable-release membership.
+
+Before publishing, the release operator checks Settings → General → Releases →
+**Enable release immutability**, or uses their administrator account:
+
+```sh
+gh api repos/paintedwolf-ai/paintedwolf-opengrep/immutable-releases --jq '.enabled'
+```
+
+The result must be `true`. This settings endpoint requires repository
+[administration read permission](https://docs.github.com/en/rest/repos/repos#check-if-immutable-releases-are-enabled-for-a-repository),
+which the workflow token does not have. Draft creation needs only release and
+attestation permissions; consumer selection verifies the published release's
+actual immutable state.
+
+Portable CI checks packaging only and does
 not claim Linux engine support. A Linux development replay can exercise semantics
 without qualifying the macOS release's executable, signing, or deployment target.
 

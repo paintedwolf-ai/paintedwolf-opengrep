@@ -121,7 +121,9 @@ def check_attestation(results, identity, subject):
                 "buildSignerDigest": identity["commit"], "sourceRepositoryDigest": identity["commit"],
                 "sourceRepositoryRef": identity["ref"], "sourceRepositoryURI": "https://github.com/" + REPOSITORY,
                 "sourceRepositoryIdentifier": REPOSITORY_ID, "sourceRepositoryOwnerIdentifier": OWNER_ID,
-                "runnerEnvironment": "github-hosted"}
+                "runnerEnvironment": "github-hosted", "buildTrigger": "workflow_dispatch",
+                "runInvocationURI": "https://github.com/" + REPOSITORY + "/actions/runs/"
+                + identity["run_id"] + "/attempts/" + identity["run_attempt"]}
     for result in results:
         verified = result.get("verificationResult", {})
         certificate = verified.get("signature", {}).get("certificate", {})
