@@ -273,6 +273,7 @@ class SigningCredentialHelperTest(unittest.TestCase):
         environment = {"RUNNER_TEMP": str(self.root), "OPENGREP_SIGNING_PROFILE": str(profile_path),
                        "OPENGREP_SIGN_IDENTITY": "reviewed identity"}
         with mock.patch.dict(SIGNING_CLI.os.environ, environment), \
+                mock.patch.object(SIGNING_CLI.SIGNING.sys, "platform", "darwin"), \
                 mock.patch.object(SIGNING_CLI.SIGNING, "compile_inspector", side_effect=AssertionError("compiler after import")), \
                 mock.patch.object(SIGNING_CLI.subprocess, "run") as sign, \
                 mock.patch.object(SIGNING_CLI.SIGNING, "inspect_image") as inspect:
@@ -288,10 +289,23 @@ class SigningCredentialHelperTest(unittest.TestCase):
         profile_path = self.root / "profile.json"
         profile_path.write_text(json.dumps(dict(self.profile.record(), certificate_sha256="a" * 64)))
         with mock.patch.dict(SIGNING_CLI.os.environ, {"OPENGREP_SIGNING_PROFILE": str(profile_path)}), \
+                mock.patch.object(SIGNING_CLI.SIGNING.sys, "platform", "darwin"), \
                 mock.patch.object(SIGNING_CLI.subprocess, "run") as sign, \
                 self.assertRaisesRegex(ValueError, "committed Developer ID"):
             self.cli("check", "--helper", str(self.helper))
         sign.assert_not_called()
+
+    def test_check_rejects_non_macos_before_using_private_key(self):
+        profile_path = self.root / "profile.json"
+        profile_path.write_text(json.dumps(self.profile.record()))
+        with mock.patch.dict(SIGNING_CLI.os.environ, {"OPENGREP_SIGNING_PROFILE": str(profile_path)}), \
+                mock.patch.object(SIGNING_CLI.SIGNING.sys, "platform", "linux"), \
+                mock.patch.object(SIGNING_CLI.subprocess, "run") as sign, \
+                mock.patch.object(SIGNING_CLI.SIGNING, "inspect_image") as inspect, \
+                self.assertRaisesRegex(SIGNING_CLI.SIGNING.SigningError, "requires macOS"):
+            self.cli("check", "--helper", str(self.helper))
+        sign.assert_not_called()
+        inspect.assert_not_called()
 
 
 if __name__ == "__main__":
