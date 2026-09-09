@@ -2,18 +2,25 @@
 """Fetch reviewed distributions and install them without ambient package indexes."""
 import gzip
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
 import re
+import socket
+import ssl
 import subprocess
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 
 MAX_DISTRIBUTION_BYTES = 512 * 1024 * 1024
 PYTHON_PLATFORM = "macos-arm64-cp313"
+DOWNLOAD_ATTEMPTS = 3
+RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 
 
 def requirements(path):
@@ -76,6 +83,40 @@ class HTTPSRedirects(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(request, response, code, message, headers, newurl)
 
 
+def retryable_download_error(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in RETRYABLE_HTTP_STATUS
+    if isinstance(error, urllib.error.URLError):
+        return retryable_download_error(error.reason)
+    if isinstance(error, ssl.SSLError):
+        return False
+    if isinstance(error, socket.gaierror):
+        return error.errno == socket.EAI_AGAIN
+    return isinstance(error, (TimeoutError, ConnectionError, http.client.IncompleteRead))
+
+
+def download(spec, output):
+    opener = urllib.request.build_opener(HTTPSRedirects())
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        output.seek(0)
+        output.truncate()
+        try:
+            with opener.open(spec["url"], timeout=120) as response:
+                count = 0
+                while chunk := response.read(min(1024 * 1024, spec["bytes"] + 1 - count)):
+                    count += len(chunk)
+                    if count > spec["bytes"]:
+                        raise RuntimeError(f'Dependency exceeds locked size: {spec["filename"]}')
+                    output.write(chunk)
+            return
+        except (OSError, http.client.HTTPException) as error:
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
+            if not retryable_download_error(error) or attempt + 1 == DOWNLOAD_ATTEMPTS:
+                raise
+            time.sleep(2 ** attempt)
+
+
 def fetch(spec, destination, *, offline=False):
     filename = spec["filename"]
     url = urllib.parse.urlsplit(spec["url"])
@@ -95,14 +136,7 @@ def fetch(spec, destination, *, offline=False):
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as output:
-            opener = urllib.request.build_opener(HTTPSRedirects())
-            with opener.open(spec["url"], timeout=120) as response:
-                count = 0
-                while chunk := response.read(min(1024 * 1024, spec["bytes"] + 1 - count)):
-                    count += len(chunk)
-                    if count > spec["bytes"]:
-                        raise RuntimeError(f"Dependency exceeds locked size: {filename}")
-                    output.write(chunk)
+            download(spec, output)
         verified_file(temporary, spec["sha256"], spec["bytes"])
         temporary.replace(target)
     finally:

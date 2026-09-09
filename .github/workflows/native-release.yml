@@ -247,9 +247,17 @@ jobs:
           set -euo pipefail
           python3 scripts/release_provenance.py check-evidence --evidence "$RUNNER_TEMP/incoming/build-evidence.json"
           python3 engine/build_support/native_release.py prepare-python --output "$RUNNER_TEMP/verify-python"
-          "$RUNNER_TEMP/verify-python/bin/python" engine/build_support/native_release.py verify --input "$RUNNER_TEMP/incoming/handoff.tar.gz" --output "$RUNNER_TEMP/artifact" --signing-profile engine/signing/release-profile.json
+          "$RUNNER_TEMP/verify-python/bin/python" engine/build_support/native_release.py verify --input "$RUNNER_TEMP/incoming/handoff.tar.gz" --output "$RUNNER_TEMP/artifact" --signing-profile engine/signing/release-profile.json --diagnostics "$RUNNER_TEMP/verify-diagnostics"
           python3 scripts/release.py --artifact "$RUNNER_TEMP/artifact" --output "$RUNNER_TEMP/release" --tag "$GITHUB_REF_NAME" --channel stable
           cp "$RUNNER_TEMP/incoming/build-evidence.json" "$RUNNER_TEMP/release/build-evidence.json"
+      - name: Retain failed qualification diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-verify-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verify-diagnostics/*
+          if-no-files-found: ignore
+          retention-days: 14
       - id: release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

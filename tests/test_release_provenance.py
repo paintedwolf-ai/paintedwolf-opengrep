@@ -3,7 +3,9 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -90,7 +92,10 @@ class ProvenanceTest(unittest.TestCase):
             "buildSignerDigest": self.sha, "sourceRepositoryDigest": self.sha, "sourceRepositoryRef": self.identity["ref"],
             "sourceRepositoryURI": "https://github.com/" + PROVENANCE.REPOSITORY,
             "sourceRepositoryIdentifier": PROVENANCE.REPOSITORY_ID, "sourceRepositoryOwnerIdentifier": PROVENANCE.OWNER_ID,
-            "runnerEnvironment": "github-hosted"}}, "verifiedTimestamps": [{"type": "tlog"}],
+            "runnerEnvironment": "github-hosted", "buildTrigger": "workflow_dispatch",
+            "runInvocationURI": "https://github.com/" + PROVENANCE.REPOSITORY + "/actions/runs/"
+            + self.identity["run_id"] + "/attempts/" + self.identity["run_attempt"]}},
+            "verifiedTimestamps": [{"type": "tlog"}],
             "statement": {"predicateType": "https://slsa.dev/provenance/v1",
                           "subject": [{"digest": {"sha256": PROVENANCE.digest(self.handoff)}}]}}}
 
@@ -181,38 +186,40 @@ class ProvenanceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "archive differs"):
                 PROMOTE.release_files(directory, self.identity)
 
-    def test_complete_draft_is_created_only_after_attestation_and_policy_checks(self):
+    def test_complete_draft_uses_release_permissions_without_administration_access(self):
         directory = self.release_directory()
         release = {"tag_name": self.environment["GITHUB_REF_NAME"], "draft": True, "html_url": "https://github.com/draft",
                    "assets": [{"name": path.name, "size": path.stat().st_size,
                                "digest": "sha256:" + PROVENANCE.digest(path), "state": "uploaded"}
                               for path in directory.iterdir()]}
-        responses = (json.dumps({"enabled": True}), json.dumps([[release]]))
+        subjects = {path.name: PROVENANCE.digest(path) for path in directory.iterdir()
+                    if path.name != "provenance.sigstore.json"}
+        attestation = self.attestation()
+        attestation["verificationResult"]["statement"]["subject"] = [
+            {"name": name, "digest": {"sha256": digest}} for name, digest in subjects.items()]
+        state_path = self.root / "gh-state.json"
+        state_path.write_text(json.dumps({"identity": self.identity, "directory": str(directory),
+            "subjects": subjects, "attestation": attestation, "release": release, "calls": []}))
+        executable = self.root / "gh"
+        shutil.copyfile(Path(__file__).with_name("fixtures") / "release_gh.py", executable)
+        executable.chmod(0o755)
         with mock.patch.object(PROVENANCE, "ROOT", self.root), \
-                mock.patch.object(PROVENANCE, "verify_attestation") as verify, \
-                mock.patch.object(PROVENANCE, "require_unpublished") as unpublished, \
-                mock.patch.object(PROVENANCE, "command", side_effect=responses), \
-                mock.patch.object(PROMOTE.subprocess, "run") as upload:
+                mock.patch.dict(os.environ, {"PATH": str(self.root) + os.pathsep + os.environ["PATH"],
+                                             "RELEASE_GH_STATE": str(state_path)}):
             self.assertEqual(PROMOTE.draft(directory, self.identity), release["html_url"])
-        self.assertEqual(verify.call_count, 3)
-        unpublished.assert_called_once_with(self.identity)
-        upload.assert_called_once()
-        arguments = upload.call_args.args[0]
-        self.assertIn("--draft", arguments)
-        self.assertIn("--verify-tag", arguments)
-        self.assertNotIn("--clobber", arguments)
+        state = json.loads(state_path.read_text())
+        self.assertTrue(state["created"])
+        self.assertEqual([arguments[:2] for arguments in state["calls"]], [
+            ["attestation", "verify"], ["attestation", "verify"], ["attestation", "verify"],
+            ["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
 
-    def test_unverified_or_mutable_release_never_creates_draft(self):
+    def test_unverified_release_never_creates_draft(self):
         directory = self.release_directory()
-        for attest_error, enabled in ((ValueError("invalid attestation"), True), (None, False)):
-            with self.subTest(attest_error=attest_error, enabled=enabled), \
-                    mock.patch.object(PROVENANCE, "ROOT", self.root), \
-                    mock.patch.object(PROVENANCE, "verify_attestation", side_effect=attest_error), \
-                    mock.patch.object(PROVENANCE, "require_unpublished"), \
-                    mock.patch.object(PROVENANCE, "command", return_value=json.dumps({"enabled": enabled})), \
-                    mock.patch.object(PROMOTE.subprocess, "run") as upload, self.assertRaises(ValueError):
-                PROMOTE.draft(directory, self.identity)
-            upload.assert_not_called()
+        with mock.patch.object(PROVENANCE, "ROOT", self.root), \
+                mock.patch.object(PROVENANCE, "verify_attestation", side_effect=ValueError("invalid attestation")), \
+                mock.patch.object(PROMOTE.subprocess, "run") as upload, self.assertRaises(ValueError):
+            PROMOTE.draft(directory, self.identity)
+        upload.assert_not_called()
 
     def test_cli_rejects_missing_and_cross_operation_arguments_before_work(self):
         cases = (

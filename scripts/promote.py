@@ -56,8 +56,6 @@ def draft(directory, identity):
     for subject in files[:-1]:
         PROVENANCE.verify_attestation(subject, files[-1], identity)
     PROVENANCE.require_unpublished(identity)
-    settings = json.loads(PROVENANCE.command(["gh", "api", "repos/" + PROVENANCE.REPOSITORY + "/immutable-releases"]))
-    PROVENANCE.require(settings.get("enabled") is True, "Immutable releases must be enabled before creating this draft")
     tag = identity["ref"].removeprefix("refs/tags/")
     with tempfile.TemporaryDirectory(prefix="opengrep-draft-") as temporary:
         notes = Path(temporary) / "notes.md"
@@ -65,7 +63,7 @@ def draft(directory, identity):
                          + "\nBuild run: https://github.com/" + PROVENANCE.REPOSITORY + "/actions/runs/"
                          + identity["run_id"] + "/attempts/" + identity["run_attempt"]
                          + "\n\nArchive, release descriptor, and build evidence have GitHub-hosted provenance attestations."
-                         + " Publish this complete draft to make its tag and assets immutable.\n")
+                         + " Confirm that immutable releases are enabled before publishing this complete draft.\n")
         subprocess.run(["gh", "release", "create", tag, "--repo", PROVENANCE.REPOSITORY, "--verify-tag", "--draft",
                         "--target", identity["commit"], "--title", tag, "--notes-file", str(notes),
                         *[str(path) for path in files]], check=True)

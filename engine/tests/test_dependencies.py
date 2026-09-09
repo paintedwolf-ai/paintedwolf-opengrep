@@ -46,10 +46,97 @@ class DependencyFetchTest(unittest.TestCase):
     def test_wrong_hash_truncation_and_overrun_leave_no_file(self):
         expected = b"reviewed distribution"
         for data in (b"x" * len(expected), expected[:-1], expected + b"extra"):
-            with self.subTest(data=data), self.response(data):
+            with self.subTest(data=data), self.response(data) as network, mock.patch.object(DEPS.time, "sleep") as sleep:
                 with self.assertRaises(RuntimeError):
                     DEPS.fetch(distribution(expected), self.root)
                 self.assertEqual(list(self.root.iterdir()), [])
+                self.assertEqual(network.return_value.open.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_transient_http_errors_retry_and_close_failed_responses(self):
+        data = b"reviewed distribution"
+        for status in (408, 429, 500, 502, 503, 504):
+            body = io.BytesIO(b"unavailable")
+            error = DEPS.urllib.error.HTTPError(distribution()["url"], status, "unavailable", {}, body)
+            with self.subTest(status=status), mock.patch.object(DEPS.urllib.request, "build_opener") as network, \
+                    mock.patch.object(DEPS.time, "sleep") as sleep:
+                network.return_value.open.side_effect = [error, io.BytesIO(data)]
+                target = DEPS.fetch(distribution(data), self.root)
+                self.assertEqual(target.read_bytes(), data)
+                self.assertEqual(network.return_value.open.call_count, 2)
+                self.assertTrue(body.closed)
+                sleep.assert_called_once_with(1)
+                self.assertEqual(list(self.root.iterdir()), [target])
+                target.unlink()
+
+    def test_partial_stream_retry_discards_previous_bytes(self):
+        data = b"reviewed distribution"
+        for error in (TimeoutError(), ConnectionResetError(), DEPS.http.client.IncompleteRead(b"partial", 10)):
+            response = mock.MagicMock()
+            response.__enter__.return_value = response
+            response.read.side_effect = [b"partial", error]
+            with self.subTest(error=type(error).__name__), \
+                    mock.patch.object(DEPS.urllib.request, "build_opener") as network, \
+                    mock.patch.object(DEPS.time, "sleep") as sleep:
+                network.return_value.open.side_effect = [response, io.BytesIO(data)]
+                target = DEPS.fetch(distribution(data), self.root)
+                self.assertEqual(target.read_bytes(), data)
+                response.__exit__.assert_called_once()
+                sleep.assert_called_once_with(1)
+                self.assertEqual(list(self.root.iterdir()), [target])
+                target.unlink()
+
+    def test_wrapped_transport_errors_retry_with_bounded_backoff(self):
+        errors = (TimeoutError(), ConnectionResetError(),
+                  DEPS.socket.gaierror(DEPS.socket.EAI_AGAIN, "temporary DNS failure"))
+        for reason in errors:
+            error = DEPS.urllib.error.URLError(reason)
+            with self.subTest(reason=type(reason).__name__), \
+                    mock.patch.object(DEPS.urllib.request, "build_opener") as network, \
+                    mock.patch.object(DEPS.time, "sleep") as sleep:
+                network.return_value.open.side_effect = error
+                with self.assertRaises(DEPS.urllib.error.URLError) as raised:
+                    DEPS.fetch(distribution(), self.root)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(network.return_value.open.call_count, 3)
+                self.assertEqual(sleep.call_args_list, [mock.call(1), mock.call(2)])
+                self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_permanent_http_tls_and_untyped_errors_never_retry(self):
+        certificate = DEPS.ssl.SSLCertVerificationError(1, "certificate rejected")
+        errors = [DEPS.urllib.error.HTTPError(distribution()["url"], status, "rejected", {}, io.BytesIO())
+                  for status in (400, 401, 403, 404, 501)]
+        errors += [certificate, DEPS.urllib.error.URLError(certificate),
+                   DEPS.urllib.error.URLError("timed out"), DEPS.ssl.SSLError(1, "TLS rejected"),
+                   DEPS.socket.gaierror(DEPS.socket.EAI_NONAME, "unknown host"), PermissionError()]
+        for error in errors:
+            with self.subTest(error=repr(error)), mock.patch.object(DEPS.urllib.request, "build_opener") as network, \
+                    mock.patch.object(DEPS.time, "sleep") as sleep:
+                network.return_value.open.side_effect = error
+                with self.assertRaises(type(error)) as raised:
+                    DEPS.fetch(distribution(), self.root)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(network.return_value.open.call_count, 1)
+                sleep.assert_not_called()
+                self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_partial_stream_failure_cleans_temporary_file_after_final_attempt(self):
+        responses = []
+        for _ in range(DEPS.DOWNLOAD_ATTEMPTS):
+            response = mock.MagicMock()
+            response.__enter__.return_value = response
+            response.read.side_effect = [b"partial", ConnectionResetError()]
+            responses.append(response)
+        with mock.patch.object(DEPS.urllib.request, "build_opener") as network, \
+                mock.patch.object(DEPS.time, "sleep") as sleep:
+            network.return_value.open.side_effect = responses
+            with self.assertRaises(ConnectionResetError):
+                DEPS.fetch(distribution(), self.root)
+            self.assertEqual(network.return_value.open.call_count, DEPS.DOWNLOAD_ATTEMPTS)
+            self.assertEqual(sleep.call_args_list, [mock.call(1), mock.call(2)])
+            self.assertEqual(list(self.root.iterdir()), [])
+            for response in responses:
+                response.__exit__.assert_called_once()
 
     def test_corrupt_cache_is_rejected_without_refetch(self):
         pin = distribution()

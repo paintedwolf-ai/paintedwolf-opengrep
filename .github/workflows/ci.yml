@@ -23,6 +23,12 @@ jobs:
         with:
           python-version: '3.13'
       - run: ./task check
+      - name: Prepare locked native packaging dependencies
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          python3 engine/build_support/native_release.py prepare-python --output "$RUNNER_TEMP/native-test-python"
+          echo "PW_NATIVE_PACKAGING_PYTHON=$RUNNER_TEMP/native-test-python/bin/python" >> "$GITHUB_ENV"
       - run: ./task test
   check:
     if: always()
