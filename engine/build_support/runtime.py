@@ -91,14 +91,13 @@ def relocate_framework(framework):
         identities = subprocess.check_output(["otool", "-D", str(path)], text=True)
         arguments = [item for old, new in changes.items() for item in ("-change", old, new)]
         if any(line.startswith(FRAMEWORK_PREFIX) for line in identities.splitlines()):
-            # Python's linker identity must resolve when Nuitka links its executable.
-            # Other library identities are metadata, not dependency search paths.
+            # The interpreter library needs an absolute linker identity.
             arguments.extend(["-id", str(path) if path.name == "Python" else path.name])
         if not arguments:
             continue
         path.chmod(path.stat().st_mode | 0o200)
         run(["install_name_tool", *arguments, str(path)])
-        # Sign the Mach-O itself; nested Tcl frameworks also contain unsigned scripts.
+        # Sign each native image without treating its surrounding files as a bundle.
         with tempfile.TemporaryDirectory(prefix="opengrep-python-sign-") as temporary:
             image = Path(temporary) / "image"
             shutil.copy2(path, image)

@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""Retain upstream source for the works whose licences require it.
-
-The executable statically links LGPL and MPL works alongside the engine. Their
-licences ask that a recipient be able to get, and for the three without a
-linking exception to relink against, the library sources. Publishing the
-engine's own source does not do that.
-
-`locks/corresponding-source.json` records who is owed source, written from the
-inventory in `packaging/opengrep/licensing` by `inventory.py retained-lock`.
-This retains each one's pinned upstream archive, verified against the digest the
-pin records, so `source_archive.py` can carry it under `third-party/`.
-
-Permissively licensed inputs are not retained: MIT, ISC, BSD and Apache ask for
-attribution, which the notices give, and not for source.
-"""
+"""Retain verified dependency sources required by their licenses."""
 import argparse
 import hashlib
 import json
@@ -32,7 +18,7 @@ def digest(raw, algorithm="sha256"):
 
 
 def verify(entry, raw):
-    """Check retained bytes against whichever digest the pin records."""
+    """Verify source bytes against the recorded digest algorithm."""
     for algorithm in ("sha256", "sha512"):
         expected = entry.get(algorithm)
         if not expected:
@@ -48,8 +34,6 @@ def retain_archive(entry, destination):
     raw = urllib.request.urlopen(entry["url"], timeout=180).read()
     verified = verify(entry, raw)
     if verified is None:
-        # Every opam and PyPI pin records a digest. A retained archive with none
-        # is unverifiable source shipped as if it were the pinned bytes.
         raise RuntimeError(f'{entry["id"]}: retained archive has no digest to verify against')
     name = re.sub(r"[^A-Za-z0-9._-]", "_", entry["url"].rsplit("/", 1)[-1]) or "source"
     target = destination / entry["id"].replace("/", "_") / name
@@ -61,7 +45,7 @@ def retain_archive(entry, destination):
 
 
 def retain_git(entry, destination):
-    """Retain a source pinned by git revision rather than by release archive."""
+    """Archive the pinned source revision."""
     target = destination / entry["id"].replace("/", "_")
     work = target / "clone"
     work.mkdir(parents=True, exist_ok=True)

@@ -2,22 +2,19 @@ diff --git a/scripts/build-nuitka.sh b/scripts/build-nuitka.sh
 index e04f76c..cb3c054 100755
 --- a/scripts/build-nuitka.sh
 +++ b/scripts/build-nuitka.sh
-@@ -13,7 +13,13 @@ if [[ -z "$VERSION" ]]; then
+@@ -13,7 +13,10 @@ if [[ -z "$VERSION" ]]; then
    exit 1
  fi
  
 -EXTRA_ARGS=()
-+EXTRA_ARGS=(--assume-yes-for-downloads --user-plugin=../scripts/private_python_nuitka.py)
++EXTRA_ARGS=(--disable-ccache --user-plugin=../scripts/private_python_nuitka.py)
 +if [[ "$(uname)" == "Darwin" ]]; then
 +  EXTRA_ARGS+=(--static-libpython=no)
-+  if [[ -n "${OPENGREP_SIGN_IDENTITY:-}" ]]; then
-+    EXTRA_ARGS+=(--macos-sign-identity="${OPENGREP_SIGN_IDENTITY}" --macos-sign-notarization --macos-signed-app-name=dev.paintedwolf.opengrep)
-+  fi
 +fi
  
  # On linux we only compile to --onefile if forced using FORCE_ONEFILE.
  # In that case, we fix the tempdir to a reasonable cache directory, for
-@@ -21,7 +27,7 @@ EXTRA_ARGS=()
+@@ -21,7 +24,7 @@ EXTRA_ARGS=()
  if [[ "$FORCE_ONEFILE" == "true" || "$(uname)" == "Darwin" || "$(uname -s)" =~ ^(CYGWIN|MINGW|MSYS) ]]; then
    EXTRA_ARGS+=(
      --onefile
@@ -26,7 +23,7 @@ index e04f76c..cb3c054 100755
    )
  fi
  
-@@ -52,6 +58,7 @@ pushd cli
+@@ -52,6 +55,7 @@ pushd cli
  
  "$PYTHON_BIN" -m nuitka \
    --standalone \

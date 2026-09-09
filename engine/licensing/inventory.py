@@ -2,6 +2,7 @@
 """Inventory every third-party work inside the maintained Opengrep executable.
 
     collect          refresh licence evidence from primary sources (network)
+    collect-python   refresh Python evidence while preserving other groups
     build            derive inventory.json and INVENTORY.md from the evidence
     check            verify the evidence digests and that the inventory is current
     notices          render the third-party notice document for the engine
@@ -9,9 +10,7 @@
     archive-audit    compare the inventory against the produced source archive
     verify-artifact  reconcile the inventory with a built standalone distribution
 
-`collect` is the only step that reaches the network. Everything downstream runs
-offline from `evidence/` and `evidence-lock.json`, so a reviewer can reproduce
-the conclusions without trusting this machine.
+Collection retrieves source artifacts; subsequent commands use local evidence.
 """
 import argparse
 import hashlib
@@ -45,8 +44,7 @@ LGPL = {"LGPL-2.0", "LGPL-2.1", "LGPL-3.0"}
 STRONG_COPYLEFT = {"GPL-2.0", "GPL-3.0", "AGPL-3.0"}
 
 
-# A component that never leaves the build machine is never conveyed, so it owes
-# nothing. The menhir generator's GPL-2.0 half is the case that matters.
+# Distribution obligations apply only to conveyed components.
 NOT_CONVEYED = {"build-only", "virtual"}
 
 
@@ -91,6 +89,41 @@ def store_evidence(group, key, name, raw):
         "expression": classify.expression(spdx, exceptions),
         "copyright": classify.copyright_holders(text),
     }
+
+
+def python_evidence(packages, cache):
+    entries = {}
+    for package in packages:
+        raw = fetch.download(package["url"], cache)
+        actual = fetch.digest(raw)
+        if actual != package["sha256"] or len(raw) != package["bytes"]:
+            raise ValueError("Python licence distribution differs from the build pin: " + package["name"])
+        found = fetch.licences_from_archive(raw, package["filename"],
+                                          strip_root=package["filename"].endswith(".whl"), max_depth=3)
+        entries["python/" + package["name"]] = {
+            "group": "python",
+            "provenance": {"url": package["url"], "filename": package["filename"],
+                           "version": package["version"], "pinned_sha256": package["sha256"],
+                           "actual_sha256": actual, "sha256_match": True,
+                           "linkage": package["linkage"], "linkage_reason": package["linkage_reason"]},
+            "evidence": [store_evidence("python", f'{package["name"]}-{package["version"]}', name, data)
+                         for name, data in sorted(found.items())],
+        }
+        print(f'  python/{package["name"]}: {len(found)} licence files', flush=True)
+    return entries
+
+
+def collect_python(args):
+    lock = load(EVIDENCE_LOCK)
+    if lock is None or lock.get("schema_version") != 1:
+        raise ValueError("Python-only refresh requires an existing evidence lock")
+    entries = python_evidence(sources.enumerate_components()["python_packages"], args.cache)
+    previous = lock["components"]
+    lock["components"] = {key: value for key, value in previous.items() if value["group"] != "python"}
+    lock["components"].update(entries)
+    EVIDENCE_LOCK.write_text(json.dumps(lock, indent=1, sort_keys=True) + "\n")
+    print(f'Refreshed {len(entries)} Python components; other evidence preserved')
+    return 0
 
 
 def collect(args):
@@ -172,24 +205,7 @@ def collect(args):
            {"url": runtime["url"], "version": runtime["version"], "sha256": runtime["sha256"],
             "note": "licence text and embedded works are read from the expanded framework by "
                     "verify-artifact; the installer is not unpacked here"}, [])
-    index = load(HERE / "pypi-index.json", {})
-    for package in components["python_packages"]:
-        distribution = index.get(package["name"], {}).get(package["version"])
-        if not distribution:
-            record("python", package["name"], {"version": package["version"],
-                                               "note": "no pinned distribution in pypi-index.json"}, [])
-            continue
-        raw = fetch.download(distribution["url"], cache)
-        actual = fetch.digest(raw)
-        found = fetch.licences_from_archive(raw, distribution["filename"],
-                                            strip_root=distribution["filename"].endswith(".whl"),
-                                            max_depth=3)
-        record("python", package["name"],
-               {"url": distribution["url"], "filename": distribution["filename"],
-                "version": package["version"], "pinned_sha256": distribution["sha256"],
-                "actual_sha256": actual, "sha256_match": actual == distribution["sha256"]},
-               [store_evidence("python", f'{package["name"]}-{package["version"]}', n, r)
-                for n, r in sorted(found.items())])
+    lock["components"].update(python_evidence(components["python_packages"], cache))
 
     EVIDENCE_LOCK.write_text(json.dumps(lock, indent=1, sort_keys=True) + "\n")
     print(f"\nwrote {EVIDENCE_LOCK.relative_to(HERE.parent.parent)}: "
@@ -241,7 +257,7 @@ def linkage_of(key, entry, curated):
         return override["linkage"], override.get("linkage_basis", "curated")
     provenance = entry.get("provenance", {})
     if "linkage" in provenance:
-        return provenance["linkage"], "opam runtime dependency closure"
+        return provenance["linkage"], provenance.get("linkage_reason", "opam runtime dependency closure")
     defaults = {"engine": "static", "parsers": "static", "grammars": "static",
                 "native": "static", "python": "bundled", "python-runtime": "bundled"}
     return defaults.get(entry["group"], "static"), "component group default"
@@ -356,6 +372,19 @@ def check(args):
         failures.append(f"{missing}: in the switch export but absent from the evidence lock")
     for extra in sorted(recorded - expected):
         failures.append(f"{extra}: in the evidence lock but no longer in the switch export")
+    expected_python = {"python/" + package["name"]: package for package in current["python_packages"]}
+    recorded_python = {key for key in lock["components"] if key.startswith("python/")}
+    for key in sorted(set(expected_python) | recorded_python):
+        if key not in expected_python or key not in recorded_python:
+            failures.append(f"{key}: Python evidence inventory differs from dependency pins")
+            continue
+        package = expected_python[key]
+        provenance = lock["components"][key]["provenance"]
+        expected_facts = {"version": package["version"], "url": package["url"], "filename": package["filename"],
+                          "pinned_sha256": package["sha256"], "actual_sha256": package["sha256"],
+                          "linkage": package["linkage"]}
+        if any(provenance.get(field) != value for field, value in expected_facts.items()):
+            failures.append(f"{key}: Python evidence differs from the exact build distribution")
     for problem in failures:
         print("FAIL " + problem)
     print(f'{len(lock["components"])} components, {len(failures)} problems')
@@ -369,8 +398,7 @@ def notices(args):
         return 1
     lock = load(EVIDENCE_LOCK)
     shipped = [c for c in document["components"] if c["linkage"] != "build-only"]
-    # Identical licence texts are emitted once and referenced. 302 components
-    # share far fewer distinct texts, and a notice nobody can read is not notice.
+    # Components reference one complete copy of each distinct licence text.
     texts, order = {}, []
     for component in shipped:
         for path in component["evidence"]:
@@ -414,10 +442,7 @@ def archive_audit(args):
     if document is None:
         print("no inventory.json; run `inventory.py build` first", file=sys.stderr)
         return 1
-    # source_archive.py takes tracked engine files (recursing into every
-    # submodule except test corpora), the locked overlays, patch-created files,
-    # grammar trees, the frozen build inputs, and the retained upstream sources
-    # that locks/corresponding-source.json names.
+    # These component groups travel in the prepared source trees.
     covered = {"engine", "parsers", "grammars"}
     retained_lock = load(HERE.parent / "locks/corresponding-source.json", {"retained": []})
     retained = {entry["id"] for entry in retained_lock["retained"] if entry["url"]}
@@ -448,8 +473,7 @@ def archive_audit(args):
     restricted = [c for c in document["components"]
                   if c["group"] in covered and "Commons-Clause" in (c["exceptions"] or [])]
     if restricted:
-        # The archiver skips submodules under a test tree; report each
-        # restricted component against that rule rather than asserting it.
+        # Test-submodule exclusions determine which restricted components travel.
         archiver = load_archiver()
         print("\nrestricted licences among the components the engine tree carries:\n")
         for component in restricted:
@@ -485,9 +509,7 @@ def retained_lock(args):
     # The engine, its submodules and the grammar trees are checked out and
     # walked by the archiver, so their source is already carried.
     carried = {"engine", "parsers", "grammars"}
-    # Digests come from the switch export rather than the collected provenance:
-    # 46 opam pins record only sha512, and retention verifies whichever the pin
-    # actually carries.
+    # Retention verifies the SHA-256 or SHA-512 digest recorded by each source pin.
     switch, _ = sources.opam_export(HERE.parent / "locks/macos-arm64.opam.export")
     digests = {f'ocaml/{name}-{entry["version"]}': entry for name, entry in switch.items()}
     retained = []
@@ -558,6 +580,9 @@ def main():
     gather = commands.add_parser("collect")
     gather.add_argument("--cache", default=None, help="reuse downloaded archives from this directory")
     gather.set_defaults(handler=collect)
+    gather_python = commands.add_parser("collect-python", help="Refresh only locked Python distributions, preserving other evidence")
+    gather_python.add_argument("--cache", default=None, help="reuse downloaded archives from this directory")
+    gather_python.set_defaults(handler=collect_python)
     for name, handler in [("build", build), ("check", check), ("notices", notices),
                           ("archive-audit", archive_audit), ("retained-lock", retained_lock)]:
         commands.add_parser(name).set_defaults(handler=handler)

@@ -1,8 +1,8 @@
-# Inventory — opengrep 1.30.0+paintedwolf.32
+# Inventory — opengrep 1.30.0+paintedwolf.33
 
 Upstream `https://github.com/opengrep/opengrep.git` at `acf67b45c97c4b63626536605c77064ef536806d`.
 
-316 components inventoried; 288 link into or ship inside the executable and the rest are build-only or virtual opam packages.
+319 components inventoried; 288 link into or ship inside the executable and the rest are build-only or virtual opam packages.
 
 Licence conclusions come from the licence file inside the exact pinned source, not from package metadata. Run `inventory.py check` to verify every digest offline.
 
@@ -316,7 +316,7 @@ The OCaml layer's linkage is the runtime dependency closure of the engine's own 
 | `sqlite` | SQLite-public-domain | bundled | notice, license-text |
 | `tcl-tk` | TCL | bundled | notice, license-text |
 
-## python (38)
+## python (41)
 
 | component | licence | linkage | obligations |
 |---|---|---|---|
@@ -345,17 +345,20 @@ The OCaml layer's linkage is the runtime dependency closure of the engine's own 
 | `ordered-set` | MIT | bundled | notice, license-text |
 | `packaging` | Apache-2.0 OR BSD-2-Clause | bundled | notice, license-text |
 | `peewee` | MIT | bundled | notice, license-text |
+| `pip` | Apache-2.0 AND MPL-2.0 AND MIT AND PSF-2.0 AND BSD-3-Clause AND BSD-2-Clause AND ISC | build-only | — |
 | `protobuf` | BSD-3-Clause | bundled | notice, license-text |
 | `referencing` | MIT | bundled | notice, license-text |
 | `requests` | Apache-2.0 | bundled | notice, license-text |
 | `rich` | MIT | bundled | notice, license-text |
 | `rpds-py` | MIT | bundled | notice, license-text |
 | `ruamel.yaml` | MIT | bundled | notice, license-text |
+| `setuptools` | LGPL-3.0 AND MIT AND Apache-2.0 AND BSD-2-Clause AND PSF-2.0 | build-only | — |
 | `shellingham` | ISC | bundled | notice, license-text |
 | `typer` | MIT | bundled | notice, license-text |
 | `typer-slim` | MIT | bundled | notice, license-text |
 | `typing_extensions` | PSF-2.0 | bundled | notice, license-text |
 | `urllib3` | MIT | bundled | notice, license-text |
 | `wcmatch` | MIT | bundled | notice, license-text |
+| `wheel` | MIT AND Apache-2.0 AND BSD-2-Clause | build-only | — |
 | `zstandard` | BSD-3-Clause | bundled | notice, license-text |
 

@@ -10,6 +10,7 @@ The generated [inventory](INVENTORY.md), [notices](NOTICES-opengrep.md), and
 
 ```
 python3 inventory.py collect     # network: refresh evidence from primary sources
+python3 inventory.py collect-python  # network: refresh only locked Python distributions
 python3 inventory.py build       # offline: inventory.json + INVENTORY.md
 python3 inventory.py check       # offline: verify every digest, and that the locks agree
 python3 inventory.py notices     # offline: NOTICES-opengrep.md
@@ -18,7 +19,7 @@ python3 inventory.py archive-audit
 python3 inventory.py verify-artifact <standalone-dist>
 ```
 
-`collect` is the only step that touches the network. It takes a `--cache
+`collect` and `collect-python` touch the network. Both take a `--cache
 <dir>` to reuse downloaded archives across runs. Everything else runs offline
 from `evidence/` and `evidence-lock.json`, so a reviewer reproduces the
 conclusions without trusting the machine that collected them.
@@ -34,7 +35,7 @@ conclusions without trusting the machine that collected them.
 | `engine-opam/*.opam` | the engine's own runtime dependency declarations |
 | `locks/macos-arm64.opam.export` | the OCaml switch, with each package's source archive and checksum |
 | `locks/runtimes.json` | the private native C libraries and the Python runtime |
-| `locks/python.txt` | the pinned CLI requirements |
+| `locks/dependencies.json`, `locks/python.txt`, `locks/python-bootstrap.txt` | exact Python distribution bytes and runtime/build-only classification |
 
 `engine-submodules.json` and `engine-opam/` are snapshots of the engine at
 `acf67b45`, committed so the enumeration runs without a clone. `inventory.py

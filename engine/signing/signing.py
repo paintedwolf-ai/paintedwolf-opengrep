@@ -34,10 +34,6 @@ def execution_support():
     return sys.modules[name]
 
 
-def run_test_process(*args, **kwargs):
-    return execution_support().run_test_process(*args, **kwargs)
-
-
 class SigningError(RuntimeError):
     """A failed native check or a mismatch with the requested signing profile."""
 
@@ -106,7 +102,7 @@ def compile_inspector(output, capacity=None):
     output = Path(output).absolute()
     source = Path(__file__).with_name("native_signatures.m")
     output.parent.mkdir(parents=True, exist_ok=True)
-    result = run_test_process(["xcrun", "clang", "-fobjc-arc", "-O2", "-Wall", "-Wextra", "-Werror",
+    result = execution_support().run_test_process(["xcrun", "clang", "-fobjc-arc", "-O2", "-Wall", "-Wextra", "-Werror",
                                "-Wno-deprecated-declarations", "-mmacosx-version-min=13.0", str(source),
                                "-framework", "Foundation", "-framework", "Security", "-o", str(output)],
                               timeout=capacity.deadline(120))
@@ -167,7 +163,7 @@ def inspect_image(helper, image, profile, capacity=None):
     image = Path(image).absolute()
     SigningProfile.parse(profile.record(), platform="darwin")
     before, size = image_digest(image)
-    result = run_test_process([str(helper), str(image), profile.mode, profile.team_id or "", profile.certificate_sha256 or ""],
+    result = execution_support().run_test_process([str(helper), str(image), profile.mode, profile.team_id or "", profile.certificate_sha256 or ""],
                               timeout=capacity.deadline(120))
     if result.timed_out:
         raise SigningError("Native signature inspection timed out")
@@ -194,7 +190,7 @@ def profile_from_certificate(helper, certificate, capacity=None):
     if size > 1 << 20:
         raise SigningError("Certificate exceeds its size bound")
     capacity = capacity or execution_support().TestCapacity.detect()
-    result = run_test_process([str(helper), "--certificate", str(certificate)], timeout=capacity.deadline(60))
+    result = execution_support().run_test_process([str(helper), "--certificate", str(certificate)], timeout=capacity.deadline(60))
     if result.timed_out or result.returncode != 0 or len(result.stdout.encode()) > MAX_INSPECTOR_OUTPUT:
         raise SigningError("Native certificate profile selection failed: " + result.stdout[:2048])
     try:

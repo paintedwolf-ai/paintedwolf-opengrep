@@ -189,6 +189,7 @@ class BuildVersionTest(unittest.TestCase):
     def test_prepare_stamps_after_overlay_before_returning_archivable_source(self):
         package = self.root / "package"
         with mock.patch.object(BUILD, "checkout"), mock.patch.object(BUILD, "run"), \
+                mock.patch.object(BUILD, "dependency_support"), \
                 mock.patch.object(BUILD, "patch_series", return_value=[]), \
                 mock.patch.object(BUILD.subprocess, "check_output", return_value="interfaces\n"), \
                 mock.patch.object(BUILD.shutil, "copytree", side_effect=lambda *args, **kwargs: self.write_original()):
@@ -211,6 +212,7 @@ class BuildVersionTest(unittest.TestCase):
         for reported, success in (("1.30.0+paintedwolf.30\n", False),
                                   ("1.30.0+paintedwolf.32\n", True)):
             with self.subTest(reported=reported), \
+                    mock.patch.object(BUILD, "dependency_support"), \
                     mock.patch.object(BUILD.platform, "system", return_value="Linux"), \
                     mock.patch.object(BUILD.platform, "machine", return_value="aarch64"), \
                     mock.patch.object(BUILD.subprocess, "run") as commands, \

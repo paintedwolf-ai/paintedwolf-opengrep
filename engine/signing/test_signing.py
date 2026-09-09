@@ -156,7 +156,7 @@ class InventoryTests(unittest.TestCase):
     def test_failed_native_check_returns_no_record(self):
         failure = mock.Mock(timed_out=False, returncode=1, stdout=json.dumps({"schema_version": 1, "ok": False,
                             "error": {"code": "security_status", "stage": "validity", "osstatus": -67062}}))
-        with mock.patch.object(SIGNING.sys, "platform", "darwin"), mock.patch.object(SIGNING, "run_test_process", return_value=failure):
+        with mock.patch.object(SIGNING.sys, "platform", "darwin"), mock.patch.object(SIGNING.execution_support(), "run_test_process", return_value=failure):
             with self.assertRaisesRegex(SIGNING.SigningError, "security_status"):
                 SIGNING.inspect_inventory("helper", self.root, profile(), required=["core"])
 
@@ -203,7 +203,7 @@ class NativeTests(unittest.TestCase):
     def test_certificate_profile_uses_exact_single_subject_ou(self):
         key = self.root / "fixture-key.pem"
         capacity = SIGNING.execution_support().TestCapacity.detect()
-        result = SIGNING.run_test_process(["openssl", "genrsa", "-out", key, "2048"], timeout=capacity.deadline(60))
+        result = SIGNING.execution_support().run_test_process(["openssl", "genrsa", "-out", key, "2048"], timeout=capacity.deadline(60))
         self.assertEqual(result.returncode, 0, result.stderr)
         subjects = {"valid": "/CN=Local test/OU=ABCDEFGHIJ", "missing": "/CN=Local test",
                     "duplicate": "/CN=Local test/OU=ABCDEFGHIJ/OU=ABCDEFGHIJ",
@@ -212,7 +212,7 @@ class NativeTests(unittest.TestCase):
         for name, subject in subjects.items():
             with self.subTest(name=name):
                 certificate = self.root / (name + ".der")
-                result = SIGNING.run_test_process(["openssl", "req", "-new", "-x509", "-key", key,
+                result = SIGNING.execution_support().run_test_process(["openssl", "req", "-new", "-x509", "-key", key,
                                                   "-days", "1", "-subj", subject, "-outform", "DER", "-out", certificate],
                                                  timeout=capacity.deadline(60))
                 self.assertEqual(result.returncode, 0, result.stderr)

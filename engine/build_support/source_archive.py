@@ -20,11 +20,7 @@ def relative_path(value):
     return path
 
 
-# A submodule checked out under a test directory is a fixture corpus, not
-# source of the work. Corpora carry their own licences: the engine's
-# tests/semgrep-rules is LGPL-2.1 with a Commons Clause condition that
-# withholds the right to sell software deriving from it. Nothing in it is
-# compiled, so the archive has no reason to redistribute it.
+# Exclude separately licensed fixture submodules from the source archive.
 TEST_TREES = {"test", "tests"}
 
 
