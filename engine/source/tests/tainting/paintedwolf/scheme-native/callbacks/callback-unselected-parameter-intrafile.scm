@@ -1,0 +1,3 @@
+(use-modules ((web server) #:select (run-server)))
+(define (handler request body) (sink request))
+(run-server handler)

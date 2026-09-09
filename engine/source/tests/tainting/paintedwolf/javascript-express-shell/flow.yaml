@@ -1,0 +1,1329 @@
+{
+  "rules": [
+    {
+      "id": "express-shell",
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "severity": "ERROR",
+      "message": "Registered HTTP input reaches a verified shell command",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import $FACTORY from \"express\"; ..."
+            },
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express",
+                "symbol": []
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP",
+          "model-type": "express.app"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import {Router as $FACTORY} from \"express\"; ..."
+            },
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express",
+                "symbol": [
+                  "Router"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP",
+          "model-type": "express.app"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import * as $MODULE from \"express\"; ..."
+            },
+            {
+              "pattern": "$MODULE.Router(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$MODULE",
+                "module": "express",
+                "symbol": []
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP",
+          "model-type": "express.app"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY = require(\"express\")"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express",
+                "symbol": []
+              }
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "HTTP_FACTORY",
+          "model-type": "express.factory",
+          "model-singleton": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "const {Router: $FACTORY} = require(\"express\");"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express",
+                "symbol": [
+                  "Router"
+                ]
+              }
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "HTTP_FACTORY",
+          "model-type": "express.router.factory"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY(...)"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP",
+          "model-type": "express.app",
+          "requires-model-type": {
+            "metavariable": "$FACTORY",
+            "type": "express.factory"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY(...)"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP",
+          "model-type": "express.app",
+          "requires-model-type": {
+            "metavariable": "$FACTORY",
+            "type": "express.router.factory"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY.Router(...)"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP",
+          "model-type": "express.app",
+          "requires-model-type": {
+            "metavariable": "$FACTORY",
+            "type": "express.factory",
+            "member": "Router"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "label": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$APP",
+            "type": "express.app",
+            "member": "use"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "const {$METHOD: $CALL} = require($PACKAGE);"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$CALL",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": [
+                  "exec"
+                ]
+              }
+            },
+            {
+              "focus-metavariable": "$CALL"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "SHELL_FUNCTION",
+          "model-type": "node.shell.function"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "const {$METHOD: $CALL} = require($PACKAGE);"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$CALL",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": [
+                  "execSync"
+                ]
+              }
+            },
+            {
+              "focus-metavariable": "$CALL"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "SHELL_FUNCTION",
+          "model-type": "node.shell.function"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE = require($PACKAGE)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$MODULE",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": []
+              }
+            },
+            {
+              "focus-metavariable": "$MODULE"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "SHELL_MODULE",
+          "model-type": "node.child_process",
+          "model-singleton": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE.$METHOD"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(exec|execSync)$"
+              }
+            }
+          ],
+          "exact": true,
+          "requires": "SHELL_MODULE",
+          "label": "SHELL_FUNCTION",
+          "model-type": "node.shell.function",
+          "requires-model-type": {
+            "metavariable": "$MODULE",
+            "type": "node.child_process",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "import {exec as $CALL} from $PACKAGE;"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$CALL",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": [
+                  "exec"
+                ]
+              }
+            },
+            {
+              "focus-metavariable": "$CALL"
+            }
+          ],
+          "exact": true,
+          "label": "SHELL_FUNCTION",
+          "model-type": "node.shell.function",
+          "by-side-effect": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "import {execSync as $CALL} from $PACKAGE;"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$CALL",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": [
+                  "execSync"
+                ]
+              }
+            },
+            {
+              "focus-metavariable": "$CALL"
+            }
+          ],
+          "exact": true,
+          "label": "SHELL_FUNCTION",
+          "model-type": "node.shell.function",
+          "by-side-effect": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "import $MODULE from $PACKAGE;"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$MODULE",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": []
+              }
+            },
+            {
+              "focus-metavariable": "$MODULE"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "SHELL_MODULE",
+          "model-type": "node.child_process",
+          "model-singleton": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "import * as $MODULE from $PACKAGE;"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$MODULE",
+                "modules": [
+                  "child_process",
+                  "node:child_process"
+                ],
+                "symbol": []
+              }
+            },
+            {
+              "focus-metavariable": "$MODULE"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "SHELL_MODULE",
+          "model-type": "node.child_process.namespace",
+          "model-singleton": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE.$METHOD"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(exec|execSync)$"
+              }
+            }
+          ],
+          "exact": true,
+          "requires": "SHELL_MODULE",
+          "label": "SHELL_FUNCTION",
+          "model-type": "node.shell.function",
+          "requires-model-type": {
+            "metavariable": "$MODULE",
+            "type": "node.child_process.namespace",
+            "member": "$METHOD"
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "$CALL($COMMAND, ...)"
+            },
+            {
+              "focus-metavariable": "$COMMAND"
+            }
+          ],
+          "requires": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$CALL",
+            "type": "node.shell.function"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE.$METHOD($COMMAND, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(exec|execSync)$"
+              }
+            },
+            {
+              "focus-metavariable": "$COMMAND"
+            }
+          ],
+          "requires": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$MODULE",
+            "type": "node.child_process",
+            "member": "$METHOD"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE.$METHOD($COMMAND, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(exec|execSync)$"
+              }
+            },
+            {
+              "focus-metavariable": "$COMMAND"
+            }
+          ],
+          "requires": "HTTP_VALUE",
+          "requires-model-type": {
+            "metavariable": "$MODULE",
+            "type": "node.child_process.namespace",
+            "member": "$METHOD"
+          }
+        }
+      ],
+      "pattern-propagators": [
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE.$METHOD(...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)$"
+              }
+            }
+          ],
+          "from": "$MODULE",
+          "to": "$MODULE",
+          "by-side-effect": false,
+          "from-model-type": "node.child_process",
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY.Router(...)"
+            }
+          ],
+          "from": "$FACTORY",
+          "to": "$FACTORY",
+          "by-side-effect": false,
+          "from-model-type": "express.factory",
+          "from-model-member": "Router",
+          "preserves-model-type": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+            }
+          ],
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$APP.use($HANDLER, ...)"
+            }
+          ],
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$MODULE.$METHOD(...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)$"
+              }
+            }
+          ],
+          "from": "$MODULE",
+          "to": "$MODULE",
+          "by-side-effect": false,
+          "from-model-type": "node.child_process.namespace",
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        }
+      ],
+      "metadata": {
+        "category": "security",
+        "cwe": "CWE-78",
+        "confidence": "HIGH",
+        "technology": [
+          "express",
+          "nodejs"
+        ],
+        "references": [
+          "https://nodejs.org/api/child_process.html#child_processexeccommand-options-callback",
+          "https://expressjs.com/en/5x/api/request/#req.query",
+          "https://nodejs.org/api/esm.html#built-in-modules"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "rules": [
+    {
+      "id": "binding",
+      "languages": [
+        "typescript"
+      ],
+      "message": "Type has lexical import provenance",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "function $F($ARG: $TYPE, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "next",
+            "symbol": [
+              "NextApiRequest"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "rules": [
+    {
+      "id": "delete-evaluation",
+      "languages": [
+        "javascript"
+      ],
+      "mode": "taint",
+      "severity": "ERROR",
+      "message": "Tainted value reaches sink",
+      "options": {
+        "taint_intrafile": false
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source(...)",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink(...)",
+          "exact": true
+        }
+      ]
+    }
+  ]
+}

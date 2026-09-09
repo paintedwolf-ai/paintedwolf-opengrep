@@ -1,0 +1,129 @@
+{
+  "rules": [
+    {
+      "id": "predicate",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Resolved string equality",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true,
+        "guarded_taint_signatures": true,
+        "taint_assume_safe_booleans": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "register($HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink($VALUE)",
+          "preserves-arguments": [
+            0
+          ]
+        },
+        {
+          "pattern": "unknownSink($VALUE)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "focusedSink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "preserves-arguments": [
+            0
+          ]
+        },
+        {
+          "pattern": "secondSink($VALUE, $OTHER)",
+          "preserves-arguments": [
+            1
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "callbackSink($VALUE, $CALLBACK)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "preserves-arguments": [
+            0
+          ]
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "patterns": [
+            {
+              "pattern": "$EQ($VALUE, $LITERAL)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$EQ",
+                "module": "guards",
+                "symbol": [
+                  "sameString"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "predicate": {
+            "type": "string-equals",
+            "input": "$VALUE",
+            "literal": "$LITERAL"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$NOT($BOOL)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NOT",
+                "module": "guards",
+                "symbol": [
+                  "invert"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "predicate": {
+            "type": "boolean-not",
+            "input": "$BOOL"
+          }
+        }
+      ]
+    }
+  ]
+}

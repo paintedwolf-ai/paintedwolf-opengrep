@@ -1,0 +1,69 @@
+diff --git a/src/parsing_languages/Parse_target2.ml b/src/parsing_languages/Parse_target2.ml
+--- a/src/parsing_languages/Parse_target2.ml
++++ b/src/parsing_languages/Parse_target2.ml
+@@ -40,6 +40,15 @@
+ (*****************************************************************************)
+ (* Entry point *)
+ (*****************************************************************************)
++
++let native_parse_result file {Native_script_tree.parsed; diagnostics} =
++  let result = run file [TreeSitter (fun _ -> parsed)] (fun ast -> ast) in
++  {result with
++    semantic_gaps=diagnostics.semantic_gaps;
++    skipped_tokens=diagnostics.skipped_tokens;
++    inserted_tokens=diagnostics.inserted_tokens;
++    errors=List.map (fun error -> Parsing_result2.Tree_sitter_error error) parsed.errors;
++    tolerated_errors=[]}
+ 
+ let just_parse_with_lang lang file : Parsing_result2.t =
+ 
+@@ -169,17 +178,11 @@
+    * a generic AST (no calls to an xxx_to_generic() below)
+    *)
+   | Lang.Groovy ->
+-      let parsed, semantic_gaps = Parse_groovy_native.parse file in
+-      let result = run file [ TreeSitter (fun _ -> parsed) ] (fun x -> x) in
+-      {result with semantic_gaps}
++      native_parse_result file (Parse_groovy_native.parse file)
+   | Lang.Perl ->
+-      let parsed, semantic_gaps = Parse_perl_native.parse file in
+-      let result = run file [ TreeSitter (fun _ -> parsed) ] (fun x -> x) in
+-      {result with semantic_gaps}
++      native_parse_result file (Parse_perl_native.parse file)
+   | Lang.Powershell ->
+-      let parsed, semantic_gaps = Parse_powershell_native.parse file in
+-      let result = run file [ TreeSitter (fun _ -> parsed) ] (fun x -> x) in
+-      {result with semantic_gaps}
++      native_parse_result file (Parse_powershell_native.parse file)
+   | Lang.Cairo ->
+       run file [ TreeSitter Parse_cairo_tree_sitter.parse ] (fun x -> x)
+   | Lang.Crystal ->
+diff --git a/src/parsing/Parsing_result2.ml b/src/parsing/Parsing_result2.ml
+--- a/src/parsing/Parsing_result2.ml
++++ b/src/parsing/Parsing_result2.ml
+@@ -71,6 +71,7 @@
+   errors |> List_.map (format_error ?style) |> String.concat ""
+ 
+ let diagnostics result =
+-  List.map (fun location -> Parsing_diagnostic.Syntax location) result.skipped_tokens
++  List.map (fun location -> Parsing_diagnostic.Syntax location)
++    (result.skipped_tokens @ result.inserted_tokens)
+   @ List.map (fun (construct, location) ->
+       Parsing_diagnostic.Unsupported_semantics (construct, location)) result.semantic_gaps
+diff --git a/src/engine/Match_tainting_mode.ml b/src/engine/Match_tainting_mode.ml
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -1018,9 +1018,10 @@
+   let _, frontend_diagnostics = lazy_force xtarget.Xtarget.lazy_ast_and_errors in
+   let already_reported location =
+     List.exists (function
+-      | Parsing_diagnostic.Unsupported_semantics (_, loc) ->
+-          Option.fold ~none:false ~some:(Tok.equal_location loc) location
+-      | Syntax _ -> false) frontend_diagnostics in
++      | Parsing_diagnostic.Unsupported_semantics (_, loc)
++      | Syntax loc ->
++          Option.fold ~none:false ~some:(Tok.equal_location loc) location)
++      frontend_diagnostics in
+   let semantic_errors =
+     semantic_gaps
+     |> List.filter (fun (_, location) -> not (already_reported location))

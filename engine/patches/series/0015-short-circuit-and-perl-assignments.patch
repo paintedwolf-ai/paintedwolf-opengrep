@@ -1,0 +1,139 @@
+diff --git a/src/analyzing/AST_to_IL.ml b/src/analyzing/AST_to_IL.ml
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -1300,6 +1300,25 @@
+ (* We set `void` to `true` when the value of the expression is being discarded, in
+  * which case, for certain expressions and in certain languages, we assume that the
+  * expression has side-effects. See translation of operators below. *)
++and perl_conditional_assignment env g_expr lhs op tok rhs =
++  let eorig = SameAs g_expr in
++  let ss_lhs, target = lval env lhs in
++  let value = mk_e (Fetch target) (SameAs lhs) in
++  let condition =
++    match op with
++    | G.And -> value
++    | G.Or -> mk_e (Operator ((G.Not, tok), [Unnamed value])) (related_tok tok)
++    | G.Nullish ->
++        mk_e (Operator ((G.PhysEq, tok),
++          [Unnamed value; Unnamed (mk_e (Literal (G.Null tok)) (related_tok tok))]))
++          (related_tok tok)
++    | _ -> impossible (G.E g_expr)
++  in
++  let ss_rhs, rhs_value = expr env rhs in
++  let update = mk_s (Instr (mk_i (Assign (target, rhs_value)) eorig)) in
++  let branch = mk_s (If (tok, condition, ss_rhs @ [update], [])) in
++  (ss_lhs @ [branch], mk_e (Fetch target) eorig)
++
+ and expr_aux env ?(void = false) g_expr : stmts * exp =
+   let eorig = SameAs g_expr in
+   match g_expr.G.e with
+@@ -1321,11 +1340,11 @@
+   | G.Call
+       ( { e = G.IdSpecial (G.Op ((G.And | G.Or) as op), tok); _ },
+         (_, arg0 :: args, _) )
+-    when not void || env.lang =*= Lang.Ruby || env.lang =*= Lang.Crystal ->
+-      expr_lazy_op env op tok arg0 args eorig
++    -> expr_lazy_op env op tok arg0 args eorig
+   | G.Call ({ e = G.IdSpecial (G.Op op, tok); _ }, args) -> (
+       match op with
+-      | G.Elvis when env.lang =*= Lang.Kotlin || env.lang =*= Lang.Csharp -> (
++      | op when (op =*= G.Elvis && (env.lang =*= Lang.Kotlin || env.lang =*= Lang.Csharp))
++                || (op =*= G.Nullish && env.lang =*= Lang.Perl) -> (
+           (* This implements the logic:
+            * result = lhs
+            * if (result == null) { result = rhs; }
+@@ -1337,7 +1356,6 @@
+               (* Evaluate lhs and assign its value to a temp var ('result = lhs;') *)
+               let ss_for_lhs, lhs_exp = expr env lhs_gen in
+               let lhs_assign = mk_s (Instr (mk_i (Assign (result_lval, lhs_exp)) NoOrig)) in
+-              let result_val_exp = mk_e (Fetch result_lval) (related_tok tok) in
+               (* Create the condition 'result == null' *)
+               let null_literal =
+                 mk_e (Literal (G.Null tok)) (related_tok tok)
+@@ -1345,8 +1363,8 @@
+               let condition_exp =
+                 mk_e
+                   (Operator
+-                     ( (G.Eq, tok),
+-                       [ Unnamed result_val_exp; Unnamed null_literal ] ))
++                     ( ((if env.lang =*= Lang.Perl then G.PhysEq else G.Eq), tok),
++                       [ Unnamed lhs_exp; Unnamed null_literal ] ))
+                   (related_tok tok)
+               in
+               (* Define the 'then' branch, which evaluates rhs and updates the temp var. *)
+@@ -2219,6 +2237,9 @@
+       let ss_e2, exp = expr env e2 in
+       let ss_assign, result = assign env ~g_expr e1 tok exp in
+       (ss_e2 @ ss_assign, result)
++  | G.AssignOp (lhs, ((G.And | G.Or | G.Nullish) as op, tok), rhs)
++    when env.lang =*= Lang.Perl ->
++      perl_conditional_assignment env g_expr lhs op tok rhs
+   | G.AssignOp (e1, op, e2) ->
+       let ss_e2, exp = expr env e2 in
+       let ss_lv, lval = lval env e1 in
+@@ -2638,25 +2659,46 @@
+   | Some e -> expr env e
+ 
+ and expr_lazy_op env op tok arg0 args eorig : stmts * exp =
+-  let ss0, arg0' = argument env arg0 in
+-  let (acc_ss, _), args' =
+-    (* Consider A && B && C, side-effects in B must only take effect `if A`,
+-     * and side-effects in C must only take effect `if A && B`. *)
+-    args
+-    |> List.fold_left_map
+-         (fun (acc_ss, cond) argi ->
+-           let ssi, argi' = argument env argi in
+-           let if_ss =
+-             if ssi <> [] then [mk_s @@ If (tok, cond, ssi, [])]
+-             else []
+-           in
+-           let condi =
+-             mk_e (Operator ((op, tok), [ Unnamed cond; argi' ])) eorig
+-           in
+-           ((acc_ss @ if_ss, condi), argi'))
+-         ([], IL_helpers.exp_of_arg arg0')
+-  in
+-  (ss0 @ acc_ss, mk_e (Operator ((op, tok), arg0' :: args')) eorig)
++  let result = fresh_lval tok in
++  let constants = Eval_il_partial.mk_env env.lang Dataflow_var_env.VarMap.empty in
++  let rec evaluate arg rest =
++    let statements, value = argument env arg in
++    let value = IL_helpers.exp_of_arg value in
++    let initial = Eval_il_partial.eval constants value in
++    let store = mk_s (Instr (mk_i (Assign (result, value)) eorig)) in
++    match rest with
++    | [] -> (statements @ [store], initial)
++    | next :: remaining ->
++        let condition =
++          match op with
++          | G.And -> value
++          | G.Or -> mk_e (Operator ((G.Not, tok), [Unnamed value])) eorig
++          | _ -> impossible (G.E (G.IdSpecial (G.Op op, tok) |> G.e))
++        in
++        let branch, selected = evaluate next remaining in
++        let constant =
++          match Eval_il_partial.eval_bool constants condition with
++          | Some true -> selected
++          | Some false -> initial
++          | None -> Eval_il_partial.union initial selected
++        in
++        (statements @ [store; mk_s (If (tok, condition, branch, []))], constant)
++  in
++  let statements, constant = evaluate arg0 args in
++  (match result.base, constant with
++   | Var name, G.Lit _ -> name.id_info.id_svalue := Some constant
++   | _ -> ());
++  let value = mk_e (Fetch result) eorig in
++  let value =
++    match env.lang with
++    | Lang.Python | Lang.Js | Lang.Ts | Lang.Perl
++    | Lang.Ruby | Lang.Crystal | Lang.Lua | Lang.Julia
++    | Lang.Lisp | Lang.Scheme | Lang.Clojure | Lang.Elixir -> value
++    | _ ->
++        let negated = mk_e (Operator ((G.Not, tok), [Unnamed value])) eorig in
++        mk_e (Operator ((G.Not, tok), [Unnamed negated])) eorig
++  in
++  (statements, value)
+ 
+ and call_generic env ?(void = false) tok eorig e args : stmts * exp =
+   let ss_e, e = expr env e in

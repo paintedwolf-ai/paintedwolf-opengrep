@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "python"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "taint_intrafile": false
+      }
+    }
+  ]
+}

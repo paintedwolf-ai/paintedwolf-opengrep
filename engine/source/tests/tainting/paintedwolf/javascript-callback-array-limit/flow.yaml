@@ -1,0 +1,655 @@
+{
+  "rules": [
+    {
+      "id": "express-flow",
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "severity": "ERROR",
+      "message": "Registered HTTP input reaches evaluation",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import $FACTORY from \"express\"; ..."
+            },
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import {Router as $FACTORY} from \"express\"; ..."
+            },
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import * as $MODULE from \"express\"; ..."
+            },
+            {
+              "pattern": "$MODULE.Router(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$MODULE",
+                "module": "express"
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY = require(\"express\")"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "HTTP_FACTORY"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "const {Router: $FACTORY} = require(\"express\");"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "HTTP_FACTORY"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY.Router(...)"
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP"
+        }
+      ],
+      "pattern-propagators": [
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "patterns": [
+                    {
+                      "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+                    },
+                    {
+                      "metavariable-regex": {
+                        "metavariable": "$METHOD",
+                        "regex": "^(get|post|put|patch|delete|head|options|all)$"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)"
+                }
+              ]
+            }
+          ],
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE"
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "$EVAL($CODE)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$EVAL",
+                "kind": "unbound"
+              }
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$EVAL",
+                "regex": "^eval$"
+              }
+            },
+            {
+              "focus-metavariable": "$CODE"
+            }
+          ],
+          "requires": "HTTP_VALUE"
+        }
+      ],
+      "metadata": {
+        "references": [
+          "https://raw.githubusercontent.com/pillarjs/router/v2.2.0/lib/layer.js",
+          "https://github.com/pillarjs/router/blob/v2.2.0/index.js"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -4390,7 +4390,7 @@
+                       (Domain.DLS.get constructor_instance_vars)
+                       storage_key
+                   in
+-                  Lval_env.union in_env class_instance_vars
++                  Lval_env.add_assumptions taint_inst.lang class_instance_vars in_env
+                 with
+                 | Not_found -> in_env)
+             | None ->
+@@ -4454,7 +4454,9 @@
+                                     Taint.Taint_set.singleton generic_taint
+                                   in
+                                   (* Give the parameter an Arg shape so it can be used in HOF *)
+-                                  let param_shape = S.Arg (taint_arg, [ [] ]) in
++                                  let source_matches = taint_inst.preds.is_source (G.Tk (snd pname.ident)) in
++                                  let param_shape = modeled_source_shape Taints.empty source_matches
++                                      (S.Arg (taint_arg, [ [] ])) in
+                                   let env =
+                                     Lval_env.add_lval_shape taint_inst.lang
+                                       il_lval taint_set param_shape env
+@@ -4499,6 +4501,8 @@
+                                                  Taint.Taint_set.singleton
+                                                    leaf_taint
+                                                in
++                                               let source_matches = taint_inst.preds.is_source (G.Tk (snd leaf_name.ident)) in
++                                               let leaf_shape = modeled_source_shape Taints.empty source_matches leaf_shape in
+                                                Lval_env.add_lval_shape
+                                                  taint_inst.lang leaf_lval
+                                                  leaf_taints leaf_shape env)
+@@ -4512,7 +4516,7 @@
+                      env
+                    in
+                    let combined_env =
+-                     Lval_env.union enhanced_in_env param_assumptions
++                     Lval_env.add_assumptions taint_inst.lang param_assumptions enhanced_in_env
+                    in
+                    (* Run fixpoint on lambda to get its effects *)
+                    let lambda_best_matches =
+--- a/src/tainting/Taint_lval_env.ml
++++ b/src/tainting/Taint_lval_env.ml
+@@ -576,3 +576,13 @@
+   { env with call_values = Taint_call_values.transfer lang ~before:before.call_values instruction env.call_values }
+ 
+ let eval_call_bool lang env expression = Taint_call_values.eval_bool lang env.call_values expression
++
++let add_assumptions lang assumptions env =
++  if assumptions.dead then env
++  else
++    seq_of_tainted assumptions
++    |> Seq.fold_left
++         (fun env (name, Cell (taints, shape)) ->
++           let target = IL.{ base = Var name; rev_offset = [] } in
++           add_lval_shape lang target (Xtaint.to_taints taints) shape env)
++         env
+--- a/src/tainting/Taint_lval_env.mli
++++ b/src/tainting/Taint_lval_env.mli
+@@ -197,3 +197,8 @@
+ val clear_call_value : IL.name -> env -> env
+ val transfer_call_values : Lang.t -> before:env -> IL.instr -> env -> env
+ val eval_call_bool : Lang.t -> env -> IL.exp -> bool option
++
++val add_assumptions : Lang.t -> env -> env -> env
++(** Add binding taints and shapes from an assumption environment to the current
++    scope. This combines facts that hold together; it does not join alternative
++    executions or import the assumptions' control, alias, or lifetime state. *)
+--- a/src/tainting/Taint_signature_extractor.ml
++++ b/src/tainting/Taint_signature_extractor.ml
+@@ -250,7 +250,7 @@
+   let param_assumptions = mk_param_assumptions ~taint_inst func_cfg.params in
+   let combined_env =
+     match in_env with
+-    | Some env -> Taint_lval_env.union env param_assumptions
++    | Some env -> Taint_lval_env.add_assumptions taint_inst.lang param_assumptions env
+     | None -> param_assumptions
+   in
+   let fixpoint_effects, mapping =
+@@ -455,7 +455,7 @@
+         let method_property_env =
+           mk_method_property_assumptions props taint_inst.lang
+         in
+-        Taint_lval_env.union global_env method_property_env
++        Taint_lval_env.add_assumptions taint_inst.lang method_property_env global_env
+   in
+ 
+   let { signature; _ } =

@@ -1,0 +1,37 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 7
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 21
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 34
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 39
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 43
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 52
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 56
+  }
+]

@@ -1,0 +1,40 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Source reaches sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "($FUNCTION ...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FUNCTION",
+                "module": "(web request)",
+                "symbol": [
+                  "request-uri"
+                ]
+              }
+            }
+          ],
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "(sink $VALUE)"
+        }
+      ],
+      "options": {
+        "taint_intrafile": false
+      }
+    }
+  ]
+}

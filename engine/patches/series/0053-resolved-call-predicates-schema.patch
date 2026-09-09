@@ -1,0 +1,76 @@
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -149,13 +149,47 @@
+   new-sink-pattern:
+     $ref: "#/$defs/new-pattern"
+     properties:
++      preserves-arguments:
++        type: array
++        minItems: 1
++        maxItems: 32
++        uniqueItems: true
++        items:
++          type: integer
++          minimum: 0
++          maximum: 31
+       value-path:
+         $ref: "#/$defs/sink-value-path"
+       requires:
+         type: string
++  taint-predicate:
++    oneOf:
++      - type: object
++        required: [type, input, literal]
++        additionalProperties: false
++        properties:
++          type:
++            const: string-equals
++          input:
++            type: string
++            pattern: '^\$[A-Z_][A-Z_0-9]*$'
++          literal:
++            type: string
++            pattern: '^\$[A-Z_][A-Z_0-9]*$'
++      - type: object
++        required: [type, input]
++        additionalProperties: false
++        properties:
++          type:
++            const: boolean-not
++          input:
++            type: string
++            pattern: '^\$[A-Z_][A-Z_0-9]*$'
+   new-sanitizer-pattern:
+     $ref: "#/$defs/new-pattern"
+     properties:
++      predicate:
++        $ref: "#/$defs/taint-predicate"
+       not-conflicting:
+         type: string
+   new-propagator-pattern:
+@@ -250,6 +284,7 @@
+                   strip:
+                     title: Whether to strip quotes from compared metavariables
+                     type: boolean
++              - $ref: "#/$defs/metavariable-name/properties/metavariable-name"
+               - required: [ metavariable ]
+                 $ref: "#/$defs/new-pattern"
+                 properties:
+@@ -357,6 +392,17 @@
+       anyOf:
+         - type: object
+           properties:
++            preserves-arguments:
++              type: array
++              minItems: 1
++              maxItems: 32
++              uniqueItems: true
++              items:
++                type: integer
++                minimum: 0
++                maximum: 31
++            predicate:
++              $ref: "#/$defs/taint-predicate"
+             value-path:
+               $ref: "#/$defs/sink-value-path"
+             model-singleton:

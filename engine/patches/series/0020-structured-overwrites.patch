@@ -1,0 +1,102 @@
+diff --git a/src/tainting/Shape_and_sig.ml b/src/tainting/Shape_and_sig.ml
+--- a/src/tainting/Shape_and_sig.ml
++++ b/src/tainting/Shape_and_sig.ml
+@@ -144,9 +144,9 @@
+             INVARIANT(cell): To keep shapes minimal:
+               1. Except for array element slots, if the xtaint is '`None', then the shape is not 'Bot' and we can reach
+                  another 'cell' whose xtaint is either '`Tainted' or '`Clean'.
+-              2. If the xtaint is '`Clean', the shape is 'Bot' or a scalar type.
+-                 (If we add aliasing we may need to revisit this, and instead just mark
+-                  every reachable 'cell' as clean too.)
++              2. '`Clean' blocks inherited taint at this cell. Its shape may
++                 contain independently tainted fields; reads and collection of
++                 reachable taint still traverse that shape.
+ 
+             TODO: We can attach "region ids" to refs and assign taints to regions rather than
+               to refs directly, then we can have alias analysis.
+diff --git a/src/tainting/Taint_shape.ml b/src/tainting/Taint_shape.ml
+--- a/src/tainting/Taint_shape.ml
++++ b/src/tainting/Taint_shape.ml
+@@ -379,19 +379,9 @@
+ 
+ let add_field_to_obj_check_invariant obj offset taints shape =
+   match (Xtaint.of_taints taints, shape) with
+-  | `None, Bot ->
+-      (* Literal record/tuple construction observed this field with no
+-       * taint and no sub-structure. Record it as [`Clean] rather than
+-       * dropping it: a missing entry in an [Obj] makes
+-       * [find_in_obj_w_carry] fall through to [`Not_found] and leak
+-       * the caller's flattened poly-taint, breaking field-sensitive
+-       * taint across literal record/dict construction. [`Clean] blocks
+-       * that fallback in [find_in_cell_w_carry] while still letting
+-       * later writes (e.g. [obj.body = source()]) take effect via
+-       * [Xtaint.union `Clean (`Tainted _) = `Tainted _]. The cell
+-       * [(`Clean, Bot)] satisfies INVARIANT(cell).1 (xtaint ≠ None)
+-       * and INVARIANT(cell).2 (Clean ⇒ shape = Bot). *)
+-      Fields.add offset (Cell (`Clean, Bot)) obj
++  | `None, shape ->
++      (* An explicit value blocks taint inherited from its containing object. *)
++      Fields.add offset (Cell (`Clean, shape)) obj
+   | xtaint, shape -> Fields.add offset (Cell (xtaint, shape)) obj
+ 
+ let tuple_like_obj ?(array = false) taints_and_shapes : shape =
+@@ -460,9 +450,7 @@
+ let rec gather_all_taints_in_cell_acc acc cell =
+   let (Cell (xtaint, shape)) = cell in
+   match xtaint with
+-  | `Clean ->
+-      (* Due to INVARIANT(cell) we can just stop here. *)
+-      acc
++  | `Clean
+   | `None -> gather_all_taints_in_shape_acc acc shape
+   | `Tainted taints ->
+       gather_all_taints_in_shape_acc (Taints.union taints acc) shape
+@@ -507,17 +495,10 @@
+   | [] -> `Found cell
+   | _ :: _ -> (
+       match xtaint with
+-      | `Clean ->
+-          if
+-            match shape with
+-            | Bot
+-            | Scalar _ ->
+-                false
+-            | _ -> true
+-          then
+-            Log.err (fun m ->
+-                m "BUG: Taint_shape.find_in_cell: INVARIANT(cell).2 is broken");
+-          `Clean
++      | `Clean -> (
++          match shape with
++          | Bot | Scalar _ -> `Clean
++          | _ -> find_in_shape_w_carry ~taints:Taints.empty offset shape)
+       | `None -> find_in_shape_w_carry ~taints offset shape
+       | `Tainted taints -> find_in_shape_w_carry ~taints offset shape)
+ 
+@@ -694,12 +675,7 @@
+   (* Restore INVARIANT(cell).1 *)
+   | `None, Bot -> None
+   | `Tainted taints, Bot when Taints.is_empty taints -> None
+-  (* Restore INVARIANT(cell).2 *)
+-  | `Clean, (Instance _ | Obj _ | Array _ | Arg _ | Closure _ | Fun _) ->
+-      (* If we are tainting an offset of this cell, the cell cannot be
+-         considered clean anymore. *)
+-      Some (Cell (`None, shape))
+-  | `Clean, (Bot | Scalar _)
++  | `Clean, _
+   | `None, (Instance _ | Obj _ | Array _ | Arg _ | Closure _ | Fun _ | Scalar _)
+   | ( `Tainted _,
+       (Bot | Instance _ | Obj _ | Array _ | Arg _ | Closure _ | Fun _ | Scalar _)
+@@ -803,10 +779,9 @@
+         | _ -> unify_shape new_shape shape
+       in
+       match xtaint with
++      | `Clean when Taints.is_empty new_taints -> (`Clean, shape)
+       | `None
+-      | `Clean ->
+-          (* Since we're adding taint we cannot have `Clean here. *)
+-          (new_xtaint, shape)
++      | `Clean -> (new_xtaint, shape)
+       | `Tainted taints as xtaint ->
+           if
+             !Flag_semgrep.max_taint_set_size =|= 0

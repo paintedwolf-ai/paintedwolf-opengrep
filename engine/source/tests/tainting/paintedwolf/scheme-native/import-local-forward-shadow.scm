@@ -1,0 +1,5 @@
+(use-modules ((web request) #:select (request-uri)))
+(define (handler request)
+  (define (helper) (sink (request-uri request)))
+  (define (request-uri request) "fixed")
+  (helper))

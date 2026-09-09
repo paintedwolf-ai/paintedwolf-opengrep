@@ -1,0 +1,35 @@
+diff --git a/languages/rust/generic/Parse_rust_tree_sitter.ml b/languages/rust/generic/Parse_rust_tree_sitter.ml
+index 5048f04..eebf28c 100644
+--- a/languages/rust/generic/Parse_rust_tree_sitter.ml
++++ b/languages/rust/generic/Parse_rust_tree_sitter.ml
+@@ -127,9 +127,14 @@ let rec macro_items_to_anys (xs : rust_macro_item list) : G.any list =
+   *)
+   let rec try_as_normal_exprs acc macros =
+     match (acc, macros) with
+-    (* If we end with a comma, that's pretty weird and probably wrong. *)
+-    | _, [ MacAny (G.Tk (Tok.OriginTok { str = ","; _ })) ] -> None
++    | Some e, [ MacAny (G.Tk (Tok.OriginTok { str = ","; _ })) ] -> Some [e]
+     | Some e, [] -> Some [ e ]
++    | Some callee, MacTree (left, items, right) :: rest
++      when String.equal (Tok.content_of_tok left) "(" ->
++        (match macro_items_to_anys items with
++         | [G.Args args] ->
++             try_as_normal_exprs (Some (G.Call (callee, (left, args, right)) |> G.e)) rest
++         | _ -> None)
+     | None, [] -> Some []
+     (* For now, we just directly case on the token to see if its a comma.
+        This is a fragile approach, because I'm a little suspicious and I
+@@ -182,10 +187,10 @@ let rec macro_items_to_anys (xs : rust_macro_item list) : G.any list =
+               | _ -> None
+             in
+             Some (e :: es))
+-    | _, mac :: rest ->
++    | None, mac :: rest ->
+         let* expr = macro_item_to_expr mac in
+-        let* args = try_as_normal_exprs (Some expr) rest in
+-        Some args
++        try_as_normal_exprs (Some expr) rest
++    | Some _, _ -> None
+   in
+   match try_as_normal_exprs None xs with
+   | None -> xs |> List_.map macro_item_to_any

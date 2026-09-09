@@ -1,0 +1,17 @@
+rules:
+- id: async
+  languages: [clojure]
+  severity: ERROR
+  message: Async mode
+  pattern: (register $HANDLER {:async? true ...})
+  options:
+    symbolic_propagation: true
+- id: sync
+  languages: [clojure]
+  severity: ERROR
+  message: Sync mode
+  patterns:
+  - pattern: (register $HANDLER {...})
+  - pattern-not: (register $HANDLER {:async? $VALUE ...})
+  options:
+    symbolic_propagation: true

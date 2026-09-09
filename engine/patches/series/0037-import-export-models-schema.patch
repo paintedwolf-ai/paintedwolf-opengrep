@@ -1,0 +1,56 @@
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -724,6 +724,44 @@
+     required:
+       - metavariable-type
+     additionalProperties: false
++  import-model:
++    type: object
++    properties:
++      implicit:
++        type: array
++        maxItems: 64
++        uniqueItems: true
++        items: {type: string, minLength: 1}
++      exports:
++        type: array
++        maxItems: 512
++        items:
++          type: object
++          properties:
++            module: {type: string, minLength: 1}
++            symbol: {type: string, minLength: 1}
++            absent: {const: true}
++            origin:
++              type: object
++              properties:
++                module: {type: string, minLength: 1}
++                symbol:
++                  type: array
++                  minItems: 1
++                  maxItems: 16
++                  items: {type: string, minLength: 1}
++              required: [module, symbol]
++              additionalProperties: false
++          required: [module, symbol]
++          oneOf:
++            - required: [absent]
++            - required: [origin]
++          additionalProperties: false
++    anyOf:
++      - required: [implicit]
++      - required: [exports]
++    additionalProperties: false
++
+   metavariable-name:
+     type: object
+     properties:
+@@ -738,6 +776,8 @@
+             items:
+               type: string
+               minLength: 1
++          imports:
++            $ref: "#/$defs/import-model"
+           kind:
+             enum: [unbound]
+           module:

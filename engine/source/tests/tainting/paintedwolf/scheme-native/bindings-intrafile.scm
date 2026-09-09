@@ -1,0 +1,28 @@
+(define (local)
+  (let ((value (source)))
+    ;; ruleid: flow
+    (sink value)
+    (set! value "fixed")
+    (sink value)))
+(define (parallel)
+  (let ((value "fixed"))
+    (let ((value (source)) (copy value))
+      (sink copy))))
+(define (sequential)
+  (let* ((value (source)) (copy value) (value "fixed"))
+    ;; ruleid: flow
+    (sink copy)
+    (sink value)))
+(define (shadowing)
+  (let ((value (source)))
+    (let ((value "fixed")) (sink value))
+    ;; ruleid: flow
+    (sink value)))
+(define (sibling)
+  (let ((value (source))) (sink "fixed"))
+  (let ((value "fixed")) (sink value)))
+(define (branch)
+  (let ((value "fixed"))
+    (if (condition) (set! value (source)) (set! value "fixed"))
+    ;; ruleid: flow
+    (sink value)))

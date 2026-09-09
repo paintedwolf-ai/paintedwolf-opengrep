@@ -1,0 +1,12 @@
+rules:
+  - id: computed-properties
+    languages: [typescript]
+    mode: taint
+    severity: ERROR
+    message: Tainted value reaches sink
+    options:
+      taint_intrafile: false
+    pattern-sources:
+      - pattern: source(...)
+    pattern-sinks:
+      - pattern: sink(...)

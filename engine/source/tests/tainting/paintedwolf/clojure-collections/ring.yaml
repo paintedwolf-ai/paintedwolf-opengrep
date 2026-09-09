@@ -1,0 +1,177 @@
+rules:
+- id: lycaon.clojure.ring-code-injection
+  languages:
+  - clojure
+  severity: ERROR
+  message: Registered Ring request input reaches Clojure code loading
+  mode: taint
+  options:
+    symbolic_propagation: true
+  pattern-sources: &id009
+  - patterns: &id002
+    - pattern-either:
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty $HANDLER {...})
+        - pattern-not: (ring.adapter.jetty/run-jetty $HANDLER {:async? $ASYNC ...})
+        - &id001
+          pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params ...) ...)
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty $HANDLER {:async? false ...})
+        - *id001
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty $HANDLER {:async? nil ...})
+        - *id001
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {...})
+        - pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? $ASYNC ...})
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? false ...})
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? nil ...})
+    - focus-metavariable: $HANDLER
+    exact: true
+    label: HTTP_VALUE
+    to-parameter:
+      index: 0
+      path:
+      - :query-string
+      arities: &id003
+      - 1
+  - patterns: *id002
+    exact: true
+    label: HTTP_VALUE
+    to-parameter:
+      index: 0
+      path:
+      - :query-params
+      arities: *id003
+  - patterns: &id004
+    - pattern-either:
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty $HANDLER {:async? true ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params ...) ...)
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? true ...})
+    - focus-metavariable: $HANDLER
+    exact: true
+    label: HTTP_VALUE
+    to-parameter:
+      index: 0
+      path:
+      - :query-string
+      arities: &id005
+      - 3
+  - patterns: *id004
+    exact: true
+    label: HTTP_VALUE
+    to-parameter:
+      index: 0
+      path:
+      - :query-params
+      arities: *id005
+  - patterns: &id007
+    - pattern-either:
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty $HANDLER $OPTIONS)
+        - pattern-not: (ring.adapter.jetty/run-jetty $HANDLER {...})
+        - &id006
+          pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params ...) ...)
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty $HANDLER {:async? $ASYNC ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty $HANDLER {:async? true ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty $HANDLER {:async? false ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty $HANDLER {:async? nil ...})
+        - *id006
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) $OPTIONS)
+        - pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {...})
+      - patterns:
+        - pattern: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? $ASYNC ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? true ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? false ...})
+        - pattern-not: (ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params $HANDLER) {:async? nil ...})
+    - focus-metavariable: $HANDLER
+    exact: true
+    label: HTTP_VALUE
+    to-parameter:
+      index: 0
+      path:
+      - :query-string
+      arities: &id008
+      - 1
+      - 3
+  - patterns: *id007
+    exact: true
+    label: HTTP_VALUE
+    to-parameter:
+      index: 0
+      path:
+      - :query-params
+      arities: *id008
+  pattern-sinks:
+  - patterns:
+    - pattern: (clojure.core/load-string $X)
+    - focus-metavariable: $X
+    requires: HTTP_VALUE
+  metadata:
+    category: security
+    cwe: CWE-95
+    confidence: HIGH
+    technology:
+    - clojure
+    references:
+    - https://ring-clojure.github.io/ring/ring.middleware.params.html
+    - https://ring-clojure.github.io/ring/ring.adapter.jetty.html
+    description: Models registered Ring/Jetty handlers, including named functions, lexical aliases, and parameter middleware. Known Jetty
+      options select the synchronous or asynchronous handler arity. Request fields remain separate from completion callbacks and unrelated
+      arguments.
+- id: lycaon.clojure.ring-shell-command
+  languages: [clojure]
+  severity: ERROR
+  message: Registered Ring request input reaches shell command text; use a fixed program and separate arguments
+  mode: taint
+  options:
+    symbolic_propagation: true
+  pattern-sources: *id009
+  pattern-sinks:
+  - patterns:
+    - pattern: (clojure.java.shell/sh $SHELL "-c" $COMMAND ...)
+    - metavariable-regex:
+        metavariable: $SHELL
+        regex: ^"(?:/(?:usr/)?bin/)?(?:sh|bash|dash|zsh|ksh)"$
+    - focus-metavariable: $COMMAND
+    requires: HTTP_VALUE
+  metadata:
+    category: security
+    cwe: CWE-78
+    confidence: HIGH
+    technology: [clojure]
+    references:
+    - https://clojure.github.io/clojure/clojure.java.shell-api.html
+    description: Models interpreter command text in clojure.java.shell/sh from registered Ring/Jetty handlers. Fixed executable arguments
+      and positional arguments to a constant shell script remain data.
+- id: lycaon.clojure.ring-sql-injection
+  languages: [clojure]
+  severity: ERROR
+  message: Registered Ring request input reaches SQL text; bind values as query parameters
+  mode: taint
+  options:
+    symbolic_propagation: true
+  pattern-sources: *id009
+  pattern-sinks:
+  - patterns:
+    - pattern-either:
+      - pattern: (next.jdbc/execute! $DB $QUERY ...)
+      - pattern: (next.jdbc/execute-one! $DB $QUERY ...)
+    - focus-metavariable: $QUERY
+    value-path: [0]
+    requires: HTTP_VALUE
+  metadata:
+    category: security
+    cwe: CWE-89
+    confidence: HIGH
+    technology: [clojure]
+    references:
+    - https://cljdoc.org/d/com.github.seancorfield/next.jdbc/1.3.1118/doc/getting-started
+    description: Models the SQL text element of next.jdbc query vectors in registered Ring/Jetty handlers. Values bound in later vector
+      elements do not form SQL text.

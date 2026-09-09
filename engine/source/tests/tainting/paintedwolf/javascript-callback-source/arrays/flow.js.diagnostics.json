@@ -1,0 +1,22 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 56
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 58
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 65
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unresolved_callback",
+    "line": 75
+  }
+]

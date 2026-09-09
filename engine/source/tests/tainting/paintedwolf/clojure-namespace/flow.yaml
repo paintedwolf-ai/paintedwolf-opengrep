@@ -1,0 +1,31 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "clojure"
+      ],
+      "message": "Imported request value reaches a sink",
+      "severity": "ERROR",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "(framework.http/source)",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "(sink $VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

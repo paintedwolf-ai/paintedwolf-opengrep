@@ -1,0 +1,18 @@
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -140,9 +140,12 @@
+     minItems: 1
+     maxItems: 16
+     items:
+-      type: integer
+-      minimum: 0
+-      maximum: 2147483647
++      anyOf:
++        - type: integer
++          minimum: 0
++          maximum: 2147483647
++        - type: string
++          minLength: 1
+   new-sink-pattern:
+     $ref: "#/$defs/new-pattern"
+     properties:

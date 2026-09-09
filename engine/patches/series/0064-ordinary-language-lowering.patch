@@ -1,0 +1,1413 @@
+--- a/languages/javascript/ast/ast_js.ml
++++ b/languages/javascript/ast/ast_js.ml
+@@ -369,6 +369,7 @@
+ 
+ (* quite similar to AST_generic.attribute but the 'argument' is different *)
+ and attribute =
++  | TypeParameters of a_type_parameter list
+   | KeywordAttr of keyword_attribute wrap
+   (* a.k.a decorators *)
+   | NamedAttr of tok (* @ *) * a_dotted_ident * a_arguments option
+--- a/languages/javascript/ast/visitor_js.ml
++++ b/languages/javascript/ast/visitor_js.ml
+@@ -429,6 +429,7 @@
+   and v_dotted_ident xs = v_list v_ident xs
+   and v_argument x = v_expr x
+   and v_attribute = function
++    | TypeParameters names -> v_list v_name names
+     | KeywordAttr x -> v_keyword_attribute x
+     | NamedAttr (v1, v2, v3) ->
+         v_tok v1;
+--- a/languages/javascript/generic/js_to_generic.ml
++++ b/languages/javascript/generic/js_to_generic.ml
+@@ -322,8 +322,14 @@
+       let tok = info tok in
+       G.TypedMetavar (v1, tok, v2) |> G.e
+   | Class (v1, name) ->
+-      let def, _more_attrsTODOEMPTY = class_ v1 in
+-      G.AnonClass def |> G.e |> named_expression name
++      let def, attrs = class_ v1 in
++      let expression = G.AnonClass def |> G.e in
++      let expression = match List.find_opt (function
++        | G.OtherAttribute (("TypeParameters", _), parameters) -> not (List.is_empty parameters)
++        | _ -> false) attrs with
++        | Some (G.OtherAttribute (kind, parameters)) -> G.OtherExpr (kind, G.E expression :: parameters) |> G.e
++        | _ -> expression in
++      named_expression name expression
+   | ObjAccess (v1, t, v2) ->
+       let e = expr v1 in
+       let t, v1 =
+@@ -344,6 +350,10 @@
+       let def, more_attrs = fun_ v1 in
+       (* TODO: Include attrs in generic AST? Where? *)
+       let e = G.Lambda def |> G.e in
++      let e = match List.find_opt (function
++          | G.OtherAttribute (("TypeParameters", _), parameters) -> not (List.is_empty parameters) | _ -> false) more_attrs with
++        | Some (G.OtherAttribute (kind, parameters)) -> G.OtherExpr (kind, G.E e :: parameters) |> G.e
++        | _ -> e in
+       (* Since the attrs aren't included in the AST, at least update the range
+        * to include them. See
+        * https://github.com/semgrep/semgrep/issues/7353 *)
+@@ -577,7 +587,7 @@
+ 
+ and definition (ent, def) =
+   let ent = entity ent in
+-  match def with
++  let result = match def with
+   | VarDef { v_kind = x_kind; v_init = x_init; v_type = ty } ->
+       let v2 = var_kind x_kind in
+       let ty = option type_ ty in
+@@ -607,6 +617,18 @@
+   | DefTodo (v1, v2) ->
+       let v2 = list any v2 in
+       (ent, G.OtherDef (v1, v2))
++  in
++  let ent, definition = result in
++  let type_attrs, attrs = List.partition (function
++      | G.OtherAttribute (("TypeParameters", _), _) -> true | _ -> false) ent.G.attrs in
++  let parameters = List.concat_map (function
++      | G.OtherAttribute (_, parameters) -> List.filter_map (function
++          | G.I id -> Some (G.TP {G.tp_id=id; tp_attrs=[]; tp_bounds=[];
++              tp_default=None; tp_variance=None})
++          | _ -> None) parameters
++      | _ -> []) type_attrs in
++  let tparams = if List.is_empty parameters then None else Some (fb parameters) in
++  ({ent with G.attrs; tparams}, definition)
+ 
+ and var_of_var
+     ({ name = x_name; attrs }, { v_kind = x_kind; v_init = x_init; v_type }) =
+@@ -696,6 +718,9 @@
+ and argument x = expr x
+ 
+ and attribute = function
++  | TypeParameters names ->
++      G.OtherAttribute (("TypeParameters", G.fake "type parameters"),
++        List.map (fun id -> G.I id) names)
+   | KeywordAttr x -> G.KeywordAttr (keyword_attribute x)
+   | NamedAttr (t, ids, opt) ->
+       let t1, args, t2 =
+@@ -846,7 +871,8 @@
+       G.ImportAs (t, G.FileName v1, None)
+   | Export (t, v1) ->
+       let v1 = name v1 in
+-      G.OtherDirective (("Export", t), [ G.I v1 ])
++      G.OtherDirective
++        (("Export", t), [ G.E (G.N (G.Id (v1, G.empty_id_info ())) |> G.e) ])
+ 
+ and list_stmt xs =
+   (* converting require() in import, so they can benefit from the
+--- a/languages/javascript/menhir/parser_js.mly
++++ b/languages/javascript/menhir/parser_js.mly
+@@ -1599,7 +1599,7 @@
+ 
+ encaps:
+  | T_ENCAPSED_STRING        { L (String $1) }
+- | T_DOLLARCURLY expr "}"   { $2 }
++ | T_DOLLARCURLY expr "}"   { ParenExpr ($1, $2, $3) }
+ 
+ (*----------------------------*)
+ (* arrow (short lambda) *)
+--- a/languages/python/generic/Python_to_generic.ml
++++ b/languages/python/generic/Python_to_generic.ml
+@@ -249,6 +249,7 @@
+           v
+           |> List.for_all (function
+                | KeyVal _
++               | PowInline _
+                (* semgrep-ext: ... should not count *)
+                | Key (Ellipsis _) ->
+                    true
+@@ -380,7 +381,6 @@
+   | Key v1 ->
+       let v1 = expr env v1 in
+       v1
+-  (* TODO: Spread? this is a DictSpread? *)
+   | PowInline v1 ->
+       let v1 = expr env v1 in
+       G.Call
+--- a/languages/typescript/tree-sitter/Parse_typescript_tree_sitter.ml
++++ b/languages/typescript/tree-sitter/Parse_typescript_tree_sitter.ml
+@@ -944,10 +944,10 @@
+     | Some tok -> Some (identifier env tok) (* identifier *)
+     | None -> None
+   in
+-  let _tparams, (v4, tret) = call_signature env v4 in
++  let tparams, (v4, tret) = call_signature env v4 in
+   let v5 = statement_block env v5 in
+   let f_kind = (G.LambdaKind, v2) in
+-  ({ f_attrs = v1; f_params = v4; f_body = v5; f_rettype = tret; f_kind }, v3)
++  ({ f_attrs = TypeParameters tparams :: v1; f_params = v4; f_body = v5; f_rettype = tret; f_kind }, v3)
+ 
+ and generic_type (env : env) ((v1, _v2) : CST.generic_type) : a_dotted_ident =
+   let v1 =
+@@ -1220,12 +1220,12 @@
+     identifier env v4
+     (* identifier *)
+   in
+-  let _tparams, (v5, tret) = call_signature env v5 in
++  let tparams, (v5, tret) = call_signature env v5 in
+   let v6 = statement_block env v6 in
+   let _v7 = automatic_semicolon_opt env v7 in
+   let f_kind = (G.Function, v2) in
+   let f =
+-    { f_attrs = v1 @ v3; f_params = v5; f_body = v6; f_rettype = tret; f_kind }
++    { f_attrs = TypeParameters tparams :: (v1 @ v3); f_params = v5; f_body = v6; f_rettype = tret; f_kind }
+   in
+   (basic_entity v4, FuncDef f)
+ 
+@@ -1529,14 +1529,13 @@
+                 | Some tok -> [ attr (Async, token env tok) ] (* "async" *)
+                 | None -> []
+               in
+-              let v2, tret =
++              let tparams, (v2, tret) =
+                 match v2 with
+                 | `Choice_choice_decl x ->
+                     let id = id_or_reserved_id env x in
+-                    (fb [ ParamClassic (mk_param id) ], None)
++                    ([], (fb [ ParamClassic (mk_param id) ], None))
+                 | `Call_sign x ->
+-                    let _tparams, (params, tret) = call_signature env x in
+-                    (params, tret)
++                    call_signature env x
+               in
+               let v3 =
+                 token env v3
+@@ -1552,7 +1551,7 @@
+               let f_kind = (G.Arrow, v3) in
+               let f =
+                 {
+-                  f_attrs = v1;
++                  f_attrs = TypeParameters tparams :: v1;
+                   f_params = v2;
+                   f_body = v4;
+                   f_rettype = tret;
+@@ -1579,13 +1578,13 @@
+                 | Some tok -> Some (identifier env tok) (* identifier *)
+                 | None -> None
+               in
+-              let _tparams, (v5, tret) = call_signature env v5 in
++              let tparams, (v5, tret) = call_signature env v5 in
+               let v6 = statement_block env v6 in
+               let attrs = v1 @ v3 |> List_.map attr in
+               let f_kind = (G.LambdaKind, v2) in
+               let f =
+                 {
+-                  f_attrs = attrs;
++                  f_attrs = TypeParameters tparams :: attrs;
+                   f_params = v5;
+                   f_body = v6;
+                   f_rettype = tret;
+@@ -1604,8 +1603,7 @@
+                 | Some tok -> Some (identifier env tok) (* identifier *)
+                 | None -> None
+               in
+-              (* TODO types *)
+-              let _v4 =
++              let tparams =
+                 match v4 with
+                 | Some x -> type_parameters env x
+                 | None -> []
+@@ -1619,7 +1617,7 @@
+               let class_ =
+                 {
+                   c_kind = (G.Class, v2);
+-                  c_attrs = v1;
++                  c_attrs = TypeParameters tparams :: v1;
+                   c_extends;
+                   c_implements;
+                   c_body = v6;
+@@ -2885,12 +2883,12 @@
+     | Some tok -> [ (Optional, token env tok) ] (* "?" *)
+     | None -> []
+   in
+-  let _tparams, (v8, tret) = call_signature env v8 in
++  let tparams, (v8, tret) = call_signature env v8 in
+   let v9 = statement_block env v9 in
+   let attrs = v1 @ v2 @ v2bis @ v3 @ v4 @ v5 @ v7 |> List_.map attr in
+   let f_kind = (G.Method, fake) in
+   let f =
+-    { f_attrs = []; f_params = v8; f_body = v9; f_rettype = tret; f_kind }
++    { f_attrs = [TypeParameters tparams]; f_params = v8; f_body = v9; f_rettype = tret; f_kind }
+   in
+   let e = Fun (f, None) in
+   let ty = None in
+@@ -2907,8 +2905,7 @@
+     identifier env v3
+     (* identifier *)
+   in
+-  (* TODO types: type_parameters *)
+-  let _v4 =
++  let tparams =
+     match v4 with
+     | Some x -> type_parameters env x
+     | None -> []
+@@ -2926,7 +2923,7 @@
+       c_extends;
+       c_implements;
+       c_body = v6;
+-      c_attrs = v1;
++      c_attrs = TypeParameters tparams :: v1;
+     }
+   in
+   (basic_entity v3, ClassDef c)
+@@ -3702,12 +3699,12 @@
+     identifier env v3
+     (* identifier *)
+   in
+-  let _tparams, (v4, tret) = call_signature env v4 in
++  let tparams, (v4, tret) = call_signature env v4 in
+   let v5 = statement_block env v5 in
+   let _v6 = automatic_semicolon_opt env v6 in
+   let f_kind = (G.Function, v2) in
+   let f =
+-    { f_attrs = v1; f_params = v4; f_body = v5; f_rettype = tret; f_kind }
++    { f_attrs = TypeParameters tparams :: v1; f_params = v4; f_body = v5; f_rettype = tret; f_kind }
+   in
+   (basic_entity v3, FuncDef f)
+ 
+@@ -3840,7 +3837,7 @@
+         identifier env v4
+         (* identifier *)
+       in
+-      let _tparams =
++      let tparams =
+         match v5 with
+         | Some x -> type_parameters env x
+         | None -> []
+@@ -3851,7 +3848,7 @@
+         | None -> ([], [])
+       in
+       let v7 = class_body env v7 in
+-      let attrs = [ v2 ] in
++      let attrs = [ TypeParameters tparams; v2 ] in
+       let c =
+         {
+           c_kind = (G.Class, v3);
+@@ -3880,7 +3877,7 @@
+         str env v2
+         (* identifier *)
+       in
+-      let _tparamsTODO =
++      let tparams =
+         match v3 with
+         | Some x -> type_parameters env x
+         | None -> []
+@@ -3891,7 +3888,7 @@
+       in
+       let ty = type_ env v5 in
+       let sc = semicolon env v6 in
+-      let ent = basic_entity id in
++      let ent = { (basic_entity id) with attrs = [TypeParameters tparams] } in
+       [ (ent, DefTodo (("typedef", typekwd), [ Type ty; Tk sc ])) ]
+   | `Enum_decl (v1, v2, v3, v4) ->
+       let _v1 =
+@@ -3919,7 +3916,7 @@
+         identifier env v2
+         (* identifier *)
+       in
+-      let _v3 =
++      let tparams =
+         match v3 with
+         | Some x -> type_parameters env x
+         | None -> []
+@@ -3942,7 +3939,7 @@
+           c_extends = v4;
+           c_implements = [];
+           c_body = (t1, xs, t2);
+-          c_attrs = [];
++          c_attrs = [TypeParameters tparams];
+         }
+       in
+       [ (basic_entity v2, ClassDef c) ]
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -61,7 +61,9 @@
+   cont_label : label option;
+   rec_point_label : label option;
+   rec_point_lvals : rec_point_lvals option;
++  lexical_this : IL.lval option;
+   inside_function : bool;
++  current_exception : lval option;
+   (* Whether the pattern currently being lowered by [pattern] is a
+    * destructuring *assignment target* (`(a, b.f) = e`) rather than a
+    * pattern being matched against a value (e.g. a `case` label).
+@@ -92,7 +94,9 @@
+     cont_label = None;
+     rec_point_label = None;
+     rec_point_lvals = None;
++    lexical_this = None;
+     inside_function = false;
++    current_exception = None;
+     pattern_binds_lvals = false;
+     bound_expression_values = [];
+     lang }
+@@ -248,6 +252,11 @@
+       ([], var, lval)
+   | __else__ ->
+       let var = fresh_var ?str tok in
++      (if Lang.is_js _env.lang then
++        match Eval_il_partial.eval
++            (Eval_il_partial.mk_env _env.lang Dataflow_var_env.VarMap.empty) exp with
++        | G.Lit _ as constant -> var.id_info.id_svalue := Some constant
++        | _ -> ());
+       let lval = lval_of_base (Var var) in
+       ([mk_s (Instr (mk_i (Assign (lval, exp)) NoOrig))], var, lval)
+ 
+@@ -476,10 +485,31 @@
+ (* lvalue *)
+ (*****************************************************************************)
+ 
++let javascript_arguments fdef =
++  let capture = ref None in
++  let visitor = object
++    inherit [_] G.iter_no_id_info as super
++    method! visit_function_definition () nested =
++      if fst nested.G.fkind =*= G.Arrow then super#visit_function_definition () nested
++    method! visit_expr () expression =
++      (match expression.G.e with
++      | G.OtherExpr (("Arguments", _), [G.Name (G.Id (id, info)); G.Tk token])
++          when let left, _, _ = fdef.G.fparams in
++               String.equal (string_of_int (Tok.bytepos_of_tok left)) (Tok.content_of_tok token) ->
++          capture := Some (ParamAll { pname = var_of_id_info id info; pdefault = None })
++      | _ -> ());
++      super#visit_expr () expression
++  end in
++  List.iter (visitor#visit_parameter ()) (Tok.unbracket fdef.G.fparams);
++  visitor#visit_function_body () fdef.G.fbody;
++  Option.to_list !capture
++
+ let rec lval env eorig : stmts * lval =
+   match eorig.G.e with
+   | G.N n -> ([], name n)
+-  | G.IdSpecial (G.This, tok) -> ([], lval_of_base (VarSpecial (This, tok)))
++  | G.OtherExpr (("Arguments", _), [G.Name n; G.Tk _]) when Lang.is_js env.lang ->
++      ([], name n)
++  | G.IdSpecial (G.This, tok) -> ([], Option.value ~default:(lval_of_base (VarSpecial (This, tok))) env.lexical_this)
+   | G.DotAccess (e1orig, tok, field) ->
+       let ss_off, offset' =
+         match field with
+@@ -1086,18 +1116,67 @@
+ (*****************************************************************************)
+ (* Exceptions *)
+ (*****************************************************************************)
++and exception_context env tok value =
++  match env.lang, env.current_exception with
++  | Lang.Python, Some active ->
++      let target = fresh_lval tok in
++      let context_name = { ident = ("__context__", G.fake "__context__");
++        sid = G.SId.unsafe_default; id_info = G.empty_id_info (); value_origin = None } in
++      let context = { target with rev_offset = [{o = Dot context_name; oorig = NoOrig}] } in
++      ([mk_s (Instr (mk_i (Assign (target, value)) NoOrig));
++        mk_s (Instr (mk_i (Assign (context, mk_e (Fetch active) NoOrig)) NoOrig))],
++       mk_e (Fetch target) NoOrig)
++  | _ -> ([], value)
++
+ and try_catch_else_finally env ~try_st ~catches ~opt_else ~opt_finally : stmts =
+   let try_stmt = stmt env try_st in
++  let exception_name = fresh_var (G.fake "exception") in
++  let exception_lval = lval_of_base (Var exception_name) in
+   let catches_stmt_rev =
+     List.map
+       (fun (ctok, exn, catch_st) ->
+-        (* TODO: Handle exn properly. *)
+-        let name = fresh_var ctok in
+-        let todo_pattern = fixme_stmt ToDo (G.Ce exn) in
+-        let catch_stmt = stmt env catch_st in
+-        (name, todo_pattern @ catch_stmt))
++        let caught = mk_e (Fetch exception_lval) NoOrig in
++        let catch_stmt = stmt { env with current_exception = Some exception_lval } catch_st in
++        let binding, cleanup = match exn with
++          | G.CatchPattern (G.PatWildcard _) -> ([], [])
++          | G.CatchPattern (G.PatId (id, info))
++            when not (IL_helpers.reads_name (var_of_id_info id info) catch_stmt) -> ([], [])
++          | G.CatchPattern pattern ->
++              (pattern_assign_statements env caught ~eorig:(Related (G.Ce exn)) pattern, [])
++          | G.CatchParam { pname = Some id; pinfo; _ } ->
++              let target = lval_of_id_info id pinfo in
++              let bind = mk_s (Instr (mk_i (Assign (target, caught)) (Related (G.Ce exn)))) in
++              let cleanup = if env.lang =*= Lang.Python then
++                [mk_s (Instr (mk_i (Assign (target, mk_e (Literal (G.Undefined ctok)) NoOrig)) NoOrig))]
++                else [] in
++              ((if IL_helpers.reads_name (var_of_id_info id pinfo) catch_stmt then [bind] else []), cleanup)
++          | G.CatchParam { pname = None; _ } -> ([], [])
++          | G.OtherCatch _ -> (fixme_stmt ToDo (G.Ce exn), []) in
++        let body = if List.is_empty cleanup then binding @ catch_stmt
++          else binding @ [mk_s (Try (catch_stmt, [], [], cleanup, false))] in
++        let condition = match exn with
++          | G.CatchParam { ptype = Some type_; _ } when env.lang =*= Lang.Python ->
++              Some (mk_e (ExceptionTypeIs (caught,
++                Option.value ~default:[] (Python_exceptions.catch_types type_))) (Related (G.Ce exn)))
++          | _ -> None in
++        (condition, body))
+       catches
+   in
++  let complete_dispatch = env.lang =*= Lang.Python || Lang.is_js env.lang in
++  let catches_stmt_rev = if complete_dispatch && not (List.is_empty catches_stmt_rev) then
++      let rec dispatch covered = function
++        | [] -> [mk_s (Throw (G.fake "uncaught", mk_e (Fetch exception_lval) NoOrig))]
++        | (None, body) :: _ -> body
++        | (Some ({ e = ExceptionTypeIs (_, expected); _ } as condition), body) :: rest ->
++            if List.mem "BaseException" covered
++               || (not (List.is_empty expected)
++                   && List.for_all (fun actual -> List.exists (Python_exceptions.is_subclass actual) covered) expected)
++            then dispatch covered rest
++            else [mk_s (If (G.fake "except", condition, body, dispatch (expected @ covered) rest))]
++        | (Some condition, body) :: rest ->
++            [mk_s (If (G.fake "except", condition, body, dispatch covered rest))] in
++      [(exception_name, dispatch [] catches_stmt_rev)]
++    else List.map (fun (_, body) -> (exception_name, body)) catches_stmt_rev in
+   let else_stmt =
+     match opt_else with
+     | None -> []
+@@ -1108,7 +1187,7 @@
+     | None -> []
+     | Some (_tok, finally_st) -> stmt env finally_st
+   in
+-  [ mk_s (Try (try_stmt, catches_stmt_rev, else_stmt, finally_stmt)) ]
++  [ mk_s (Try (try_stmt, catches_stmt_rev, else_stmt, finally_stmt, complete_dispatch)) ]
+ 
+ (*****************************************************************************)
+ (* Assign *)
+@@ -1429,6 +1508,39 @@
+ and expr_aux env ?(void = false) g_expr : stmts * exp =
+   let eorig = SameAs g_expr in
+   match g_expr.G.e with
++  | G.Call (tag, (left, [G.Arg {e = G.Call
++      ({e = G.IdSpecial (G.ConcatString G.TaggedTemplateLiteral, token); _},
++        (_, parts, _)); _}], right)) when Lang.is_js env.lang ->
++      call_tagged_template env ~void token eorig tag (left, parts, right)
++  | G.Call ({ e = G.OtherExpr (("Delete", tok), []); _ }, (_, [G.Arg operand], _))
++    when Lang.is_js env.lang ->
++      let finish statements value = (statements, mk_e (Literal (G.Bool (value, tok))) eorig) in
++      (match operand.G.e with
++      | G.N (G.Id (_, info)) when
++          (match !(info.G.id_resolved) with
++          | Some ((G.LocalVar | G.Parameter | G.EnclosedVar), _) -> true
++          | _ -> false) -> finish [] false
++      | G.DotAccess (receiver, _, G.FN (G.Id (id, _))) ->
++          let statements, receiver = expr env receiver in
++          let key = mk_e (Literal (G.String (Tok.unsafe_fake_bracket id))) NoOrig in
++          log_fixme ToDo (G.E (G.OtherExpr (("Delete", tok), []) |> G.e));
++          let emitted, value = call_instr tok eorig ~void
++            (fun result -> CallSpecial (result, (DeleteProperty, tok), [Unnamed receiver; Unnamed key])) in
++          (statements @ emitted, value)
++      | G.ArrayAccess (receiver, (_, key, _)) ->
++          let statements, receiver = expr env receiver in
++          let setup, _, target = aux_var ~force:true env tok receiver in
++          let key_statements, key = expr env key in
++          log_fixme ToDo (G.E (G.OtherExpr (("Delete", tok), []) |> G.e));
++          let emitted, value = call_instr tok eorig ~void
++            (fun result -> CallSpecial (result, (DeleteProperty, tok),
++              [Unnamed (mk_e (Fetch target) receiver.eorig); Unnamed key])) in
++          (statements @ setup @ key_statements @ emitted, value)
++      | G.N _ | G.DotAccess _ -> todo (G.E g_expr)
++      | _ ->
++          let statements, value = expr env operand in
++          let setup, _, _ = aux_var ~force:true env tok value in
++          finish (statements @ setup) true)
+   | G.OtherExpr (("NamedExpression", _), [G.Name (G.Id (id, info)); G.E expression])
+     when Lang.is_js env.lang ->
+       let statements, value = expr env expression in
+@@ -2327,6 +2439,13 @@
+       | _ ->
+           let tok = G.fake "call" in
+           call_generic env ~void tok eorig callee args)
++  | G.Call (callee, (_, actuals, _))
++    when env.lang =*= Lang.Python && Option.is_some (Python_exceptions.constructor callee actuals) ->
++      let name = Option.get (Python_exceptions.constructor callee actuals) in
++      let statements, arguments = arguments env actuals in
++      let call_statements, value = call_instr (G.fake name) eorig ~void
++        (fun target -> CallSpecial (target, (MakeException name, G.fake name), arguments)) in
++      (statements @ call_statements, value)
+   | G.Call (e, args) ->
+       let tok = G.fake "call" in
+       call_generic env ~void tok eorig e args
+@@ -2455,7 +2574,14 @@
+   | G.Container (kind, xs) ->
+       let l, xs, r = xs in
+       let results = List.map (fun x ->
+-        let ss, e = expr env x in (ss, e)) xs in
++        let ss, e = expr env x in
++        if Lang.is_js env.lang && G.equal_container_operator kind G.Array then
++          match e.e with
++          | Literal _ | ArrayHole _ -> (ss, e)
++          | _ ->
++              let captured, _, target = aux_var ~force:true env l e in
++              (ss @ captured, mk_e (Fetch target) e.eorig)
++        else (ss, e)) xs in
+       let ss = List.concat_map fst results in
+       let xs = List.map snd results in
+       let kind = composite_kind ~g_expr kind in
+@@ -2463,6 +2589,13 @@
+   | G.Comprehension (_op, (_l, (er, clauses), _r)) ->
+       comprehension env er clauses
+   | G.Lambda fdef ->
++      let receiver_statements, env =
++        if Lang.is_js env.lang && G.equal_function_kind (fst fdef.G.fkind) G.Arrow then
++          let token = snd fdef.fkind in
++          let receiver = Option.value ~default:(lval_of_base (VarSpecial (This, token))) env.lexical_this in
++          let capture, _, target = aux_var ~force:true env token (mk_e (Fetch receiver) NoOrig) in
++          (capture, {env with lexical_this = Some target})
++        else ([], {env with lexical_this = None}) in
+       let lval = fresh_lval ~str:"_tmp_lambda" (snd fdef.fkind) in
+       let final_fdef =
+         (* NOTE: Reset control-flow labels so that break/continue/recur from
+@@ -2475,13 +2608,15 @@
+           fdef
+       in
+       let instr = mk_s (Instr (mk_i (AssignAnon (lval, Lambda final_fdef)) eorig)) in
+-      ([instr], mk_e (Fetch lval) eorig)
++      (receiver_statements @ [instr], mk_e (Fetch lval) eorig)
+   | G.AnonClass def ->
+       (* TODO: should use def.ckind *)
+       let tok = Common2.fst3 def.G.cbody in
+       let lval = fresh_lval tok in
+       let instr = mk_s (Instr (mk_i (AssignAnon (lval, AnonClass def)) eorig)) in
+       ([instr], mk_e (Fetch lval) eorig)
++  | G.IdSpecial (G.This, _) when Option.is_some env.lexical_this ->
++      ([], mk_e (Fetch (Option.get env.lexical_this)) eorig)
+   | G.IdSpecial (spec, tok) -> (
+       let opt_var_special =
+         match spec with
+@@ -2496,6 +2631,25 @@
+           let lval = lval_of_base (VarSpecial (var_special, tok)) in
+           ([], mk_e (Fetch lval) eorig)
+       | None -> impossible (G.E g_expr))
++  | G.SliceAccess (sequence, (tok, (start, stop, step), _))
++    when env.lang =*= Lang.Python ->
++      let lower value =
++        let statements, value = match value with
++          | None -> ([], mk_e (Literal (G.Null tok)) NoOrig)
++          | Some expression -> expr env expression in
++        let target = fresh_lval tok in
++        (match target.base, Eval_il_partial.eval
++            (Eval_il_partial.mk_env env.lang Dataflow_var_env.VarMap.empty) value with
++        | Var name, (G.Lit _ as constant) -> name.id_info.id_svalue := Some constant
++        | _ -> ());
++        (statements @ [mk_s (Instr (mk_i (Assign (target, value)) NoOrig))],
++         Unnamed (mk_e (Fetch target) NoOrig)) in
++      let parts = List.map lower [Some sequence; start; stop; step] in
++      let statements = List.concat_map fst parts in
++      let args = List.map snd parts in
++      let call_ss, result = call_instr tok eorig ~void (fun target ->
++        CallSpecial (target, (SliceSequence, tok), args)) in
++      (statements @ call_ss, result)
+   | G.SliceAccess (_, _) -> todo (G.E g_expr)
+   (* e1 ? e2 : e3 ==>
+    *  pre: lval = e1;
+@@ -2607,6 +2761,8 @@
+   | G.LocalImportAll (_module, _tk, e) ->
+       (* TODO: what can we do with _module? *)
+       expr env e
++  | G.Ellipsis tok when env.lang =*= Lang.Python ->
++      call_instr tok eorig ~void (fun target -> CallSpecial (target, (PythonEllipsis, tok), []))
+   | G.Ellipsis _
+   | G.TypedMetavar (_, _, _)
+   | G.DisjExpr (_, _)
+@@ -2821,6 +2977,10 @@
+     | CLJ_ME1.Macroexpansion_error (_msg, any_expr) ->
+       ([], fixme_exp ToDo any_expr (related_tok tok))
+     | exn -> raise exn)
++  | G.OtherExpr (("Arguments", _), [G.Name n; G.Tk _]) when Lang.is_js env.lang ->
++      ([], mk_e (Fetch (name n)) eorig)
++  | G.OtherExpr (("MappedArguments", _), []) when Lang.is_js env.lang ->
++      ([], fixme_exp ToDo (G.E g_expr) eorig)
+   (* Default. *)
+   | G.OtherExpr ((str, tok), xs) ->
+       let results =
+@@ -2907,6 +3067,40 @@
+   in
+   (statements, value)
+ 
++and call_tagged_template env ~void token eorig tag (left, arguments, right) =
++  let parts = Javascript_template_literal.parts token arguments in
++  let tag_statements, tag_value = expr env tag in
++  let receiver_statements, receiver = match tag_value.e with
++    | Fetch ({rev_offset = _ :: rest; _} as method_) ->
++        let value = mk_e (Fetch {method_ with rev_offset = rest}) NoOrig in
++        let statements, _, target = aux_var ~force:true env token value in
++        (statements, Some (mk_e (Fetch target) NoOrig))
++    | _ -> ([], None) in
++  let capture_tag, _, tag_target = aux_var ~force:true env token tag_value in
++  let callee = mk_e (Fetch tag_target) tag_value.eorig in
++  let callee = match receiver with None -> callee
++    | Some receiver -> mk_e (BoundCallTarget (callee, receiver)) tag_value.eorig in
++  let string value token = mk_e (Literal (G.String (Tok.unsafe_fake_bracket (value, token)))) NoOrig in
++  let cooked = List.map (fun (segment : Javascript_template_literal.segment) ->
++      match segment.cooked with Some value -> string value segment.token
++      | None -> mk_e (Literal (G.Undefined segment.token)) NoOrig) parts.segments in
++  let raw = List.map (fun (segment : Javascript_template_literal.segment) ->
++      string segment.raw segment.token) parts.segments in
++  let template_target = fresh_lval token in
++  let template_statements = [mk_s (Instr (mk_i (CallSpecial
++      (Some template_target, (TemplateObject, token),
++       [Unnamed (mk_e (Composite (CArray, (left, cooked, right))) NoOrig);
++        Unnamed (mk_e (Composite (CArray, (left, raw, right))) NoOrig)])) NoOrig))] in
++  let substitution_statements, substitutions = List.fold_left (fun (statements, values) source ->
++      let setup, value = expr env source in
++      let capture, _, target = aux_var ~force:true env token value in
++      (statements @ setup @ capture, Unnamed (mk_e (Fetch target) value.eorig) :: values))
++      ([], []) parts.substitutions in
++  let arguments = Unnamed (mk_e (Fetch template_target) NoOrig) :: List.rev substitutions in
++  let call_statements, result = call_instr token eorig ~void (fun result -> Call (result, callee, arguments)) in
++  (tag_statements @ receiver_statements @ capture_tag @ template_statements
++    @ substitution_statements @ call_statements, result)
++
+ and call_generic env ?(void = false) tok eorig e args : stmts * exp =
+   let ss_e, e = expr env e in
+   let ss_args, args = arguments env (Tok.unbracket args) in
+@@ -2931,7 +3125,7 @@
+     | G.ConcatString _kindopt -> Concat
+     | G.Spread -> SpreadFn
+     | G.Require -> Require
+-    | G.EncodedString _
++    | G.EncodedString prefix -> EncodedString prefix
+     | G.Defined
+     | G.HashSplat
+     | G.ForOf
+@@ -2955,6 +3149,12 @@
+ 
+ and argument env arg : stmts * exp argument =
+   match arg with
++  | G.Arg { e = G.Call ({ e = G.IdSpecial (G.HashSplat, tok); _ }, (_, [G.Arg mapping], _)); _ }
++    when env.lang =*= Lang.Python ->
++      let ss, mapping_value = expr env mapping in
++      let target = fresh_lval tok in
++      (ss @ [mk_s (Instr (mk_i (Assign (target, mapping_value)) NoOrig))],
++       KeywordSpread (mk_e (Fetch target) (ValueOf mapping)))
+   | G.Arg e ->
+       let ss, arg = expr env e in
+       (ss, Unnamed arg)
+@@ -2971,10 +3171,32 @@
+ 
+ and record env ((_tok, origfields, _) as record_def) : stmts * exp =
+   let e_gen = G.Record record_def |> G.e in
++  let capture token (statements, value) =
++    if Lang.is_js env.lang then
++      match value.e with
++      | Literal _ -> (statements, value)
++      | _ ->
++          let setup, _, target = aux_var ~force:true env token value in
++          (match (value.e, target.base) with
++          | Fetch { base = Var source; rev_offset = [] }, Var target ->
++              target.id_info.G.id_svalue := !(source.id_info.G.id_svalue)
++          | _ -> ());
++          (statements @ setup, mk_e (Fetch target) value.eorig)
++    else (statements, value)
++  in
+   let results =
+     List.map
+       (fun x ->
+         match x with
++        | G.F
++            { s = G.DefStmt
++                ({ G.name = G.EDynamic key; _ },
++                 (G.VarDef { G.vinit = Some value; _ }
++                  | G.FieldDefColon { G.vinit = Some value; _ })); _ }
++          when Lang.is_js env.lang ->
++            let key_statements, key = capture _tok (expr env key) in
++            let value_statements, value = capture _tok (expr env value) in
++            (key_statements @ value_statements, Some (Entry (key, value)))
+         | G.F
+             {
+               s =
+@@ -3008,6 +3230,7 @@
+                   ([instr], mk_e (Fetch lval) forig)
+               | ___else___ -> todo (G.E e_gen)
+             in
++            let ss, field_def = capture (snd id) (ss, field_def) in
+             (ss, Some (Field (field_name, field_def)))
+         | G.F
+             {
+@@ -3483,7 +3706,24 @@
+   | _ -> None
+ 
+ and dict env (_, orig_entries, _) orig : stmts * exp =
++  let capture original =
++    let ss, value = expr env original in
++    match value.e with
++    | Literal _ -> (ss, value)
++    | _ ->
++    let target = fresh_lval (G.fake "dictionary-value") in
++    (match target.base, Eval_il_partial.eval
++        (Eval_il_partial.mk_env env.lang Dataflow_var_env.VarMap.empty) value with
++    | Var name, (G.Lit _ as constant) -> name.id_info.id_svalue := Some constant
++    | _ -> ());
++    (ss @ [mk_s (Instr (mk_i (Assign (target, value)) NoOrig))],
++     mk_e (Fetch target) (SameAs original)) in
+   let entry_of_kv korig vorig =
++    if env.lang =*= Lang.Python then
++      let ss_k, key = capture korig in
++      let ss_v, value = capture vorig in
++      (ss_k @ ss_v, Entry (key, value))
++    else
+     let ss_v, ve = expr env vorig in
+     match
+       if env.lang =*= Lang.Clojure then clojure_atom_key_literal korig else None
+@@ -3499,6 +3739,10 @@
+         match orig_entry.G.e with
+         | G.Container (G.Tuple, (_, [ korig; vorig ], _)) ->
+             entry_of_kv korig vorig
++        | G.Call ({ e = G.IdSpecial (G.Spread, _); _ }, (_, [G.Arg mapping], _))
++          when env.lang =*= Lang.Python ->
++            let ss, value = capture mapping in
++            (ss, Spread value)
+         | G.OtherExpr ((("MapPairArrow" | "MapPairKeyword"), _), [ G.E inner ])
+           when env.lang =*= Lang.Elixir ->
+             (match inner.G.e with
+@@ -3909,7 +4153,7 @@
+ (*****************************************************************************)
+ (* Parameters *)
+ (*****************************************************************************)
+-and parameters params : param list =
++and parameters env params : param list =
+   params |> Tok.unbracket
+   |> List_.mapi (fun idx gparam ->
+        match gparam with
+@@ -3947,8 +4191,9 @@
+          ->
+            Param { pname = var_of_id_info i pinfo; pdefault }
+        | G.ParamHashSplat (_, { pname = Some i; pinfo; pdefault; _ }) ->
+-           (* **kwargs in Python / **opts in Ruby: treat as rest param *)
+-           ParamRest { pname = var_of_id_info i pinfo; pdefault }
++           if env.lang =*= Lang.Python then
++             ParamKeywordRest { pname = var_of_id_info i pinfo; pdefault }
++           else ParamRest { pname = var_of_id_info i pinfo; pdefault }
+        | G.Param { pname = None; _ }
+        | G.ParamRest (_, _)
+        | G.ParamHashSplat (_, _)
+@@ -4235,7 +4480,7 @@
+       (* We want to analyze any expressions in 'ty'. *)
+       let ss, _ = type_ env ty in
+       ss
+-  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || List.mem env.lang [Lang.Clojure; Lang.Scheme; Lang.Swift] ->
++  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || List.mem env.lang [Lang.Python; Lang.Clojure; Lang.Scheme; Lang.Swift] ->
+       (* Function values retain their closure identity at callback use sites. *)
+       let ss_lv, lv = lval_of_ent env ent in
+       let il_fdef =
+@@ -4249,6 +4494,12 @@
+       in
+       ss_lv @ [ mk_s (Instr (mk_i (AssignAnon (lv, Lambda il_fdef)) (Related (G.S st)))) ]
+   | G.DefStmt def -> [ mk_s (MiscStmt (DefStmt def)) ]
++  | G.DirectiveStmt
++      { d = G.OtherDirective (("Export", tok), [G.E value]); _ }
++    when Lang.is_js env.lang ->
++      let ss, value = expr env value in
++      ss @ [mk_s (Instr (mk_i (CallSpecial (None, (Export, tok), [Unnamed value]))
++                    (Related (G.S st))))]
+   | G.DirectiveStmt dir -> [ mk_s (MiscStmt (DirectiveStmt dir)) ]
+   | G.Block xs ->
+       let xs = xs |> Tok.unbracket in
+@@ -4256,7 +4507,11 @@
+         let functions, statements = List.partition (function
+           | { G.s = G.DefStmt (_, G.FuncDef _); _ } -> true
+           | _ -> false) xs in
+-        functions @ statements
++        let statements, exports = List.partition (function
++          | { G.s = G.DirectiveStmt { d = G.OtherDirective (("Export", _), _); _ }; _ } -> false
++          | _ -> true) statements in
++        (* ESM named exports expose the binding after module initialization. *)
++        functions @ statements @ exports
+       else xs in
+       List.concat_map (stmt env) xs
+   (* Rust: if let Some(x) = some_x { ... } etc. *)
+@@ -4413,7 +4668,8 @@
+         ]
+   | G.Throw (tok, e, _) ->
+       let ss, e = expr env e in
+-      ss @ [ mk_s (Throw (tok, e)) ]
++      let context_ss, e = exception_context env tok e in
++      ss @ context_ss @ [ mk_s (Throw (tok, e)) ]
+   | G.OtherStmt (G.OS_Pass, _) -> []
+   | G.OtherStmt (G.OS_ExprStmt2, [G.E expression]) ->
+       if expression.G.is_implicit_return then implicit_return env expression G.sc
+@@ -4421,18 +4677,24 @@
+   | G.OtherStmt (G.OS_Go, [G.E call]) ->
+       expr_stmt env call G.sc
+   | G.OtherStmt (G.OS_ThrowNothing, [ G.Tk tok ]) ->
+-      (* Python's `raise` without arguments *)
+-      let eorig = related_tok tok in
+-      let todo_exp = fixme_exp ToDo (G.Tk tok) eorig in
+-      [ mk_s (Throw (tok, todo_exp)) ]
++      let exception_value = match env.current_exception with
++        | Some exception_lval -> mk_e (Fetch exception_lval) (related_tok tok)
++        | None -> fixme_exp ToDo (G.Tk tok) (related_tok tok) in
++      [ mk_s (Throw (tok, exception_value)) ]
+   | G.OtherStmt
+-      (G.OS_ThrowFrom, [ G.E from; G.S ({ s = G.Throw _; _ } as throw_stmt) ])
++      (G.OS_ThrowFrom, [ G.E from; G.S { s = G.Throw (tok, value, _); _ } ])
+     ->
+-      (* Python's `raise E1 from E2` *)
+-      let todo_stmt = fixme_stmt ToDo (G.E from) in
+-      let rest = stmt_aux env throw_stmt in
+-
+-      todo_stmt @ rest
++      let value_ss, value = expr env value in
++      let exception_lval = fresh_lval tok in
++      let freeze = mk_s (Instr (mk_i (Assign (exception_lval, value)) NoOrig)) in
++      let cause_ss, cause = expr env from in
++      let cause_name = { ident = ("__cause__", G.fake "__cause__");
++        sid = G.SId.unsafe_default; id_info = G.empty_id_info (); value_origin = None } in
++      let cause_lval = { exception_lval with rev_offset =
++        { o = Dot cause_name; oorig = NoOrig } :: exception_lval.rev_offset } in
++      let chain = mk_s (Instr (mk_i (Assign (cause_lval, cause)) (related_exp from))) in
++      let context_ss, value = exception_context env tok (mk_e (Fetch exception_lval) NoOrig) in
++      value_ss @ [freeze] @ cause_ss @ [chain] @ context_ss @ [mk_s (Throw (tok, value))]
+   | G.Try (_tok, try_st, catches, opt_else, opt_finally) ->
+       try_catch_else_finally env ~try_st ~catches ~opt_else ~opt_finally
+   | G.WithUsingResource (_, stmt1, stmt2) ->
+@@ -4757,7 +5019,11 @@
+       stmt env body_stmt
+ 
+ and function_definition env fdef : function_definition =
+-  let fparams = parameters fdef.G.fparams in
++  let env = if Lang.is_js env.lang && fst fdef.G.fkind <> G.Arrow then
++    {env with lexical_this = None} else env in
++  let fparams = parameters env fdef.G.fparams in
++  let fparams = if Lang.is_js env.lang && fst fdef.G.fkind <> G.Arrow
++      then fparams @ javascript_arguments fdef else fparams in
+   let env, rec_point_label_stmts = match env.lang, fparams with
+     (* NOTE: Clojure functions are translated to have one formal parameter,
+      * which is then destructured in a Switch (this is how multi-arity works). *)
+@@ -4770,7 +5036,7 @@
+       rec_point_label_stmts
+     | _ -> env, []
+   in
+-  let env = { env with inside_function = true } in
++  let env = { env with inside_function = true; current_exception = None } in
+   (* ParamPattern destructuring is expressed declaratively: the
+    * parameter_classic's implicit binder is the signature's Arg slot,
+    * and each leaf of the pattern is pre-seeded at taint-env setup
+--- a/src/analyzing/CFG_build.ml
++++ b/src/analyzing/CFG_build.ml
+@@ -68,6 +68,7 @@
+    * and there is no significant benefit of having these extra arcs.
+    *)
+   throw_destination : F.nodei option;
++  exception_value : IL.lval option;
+   (* The CFG of each lambda is kept here separately; it is not part of the
+    * CFG of its enclosing function. Note that an 'IL.fun_cfg' gives you the
+    * "main" CFG as well as the lambdas' CFGs, and each analysis chooses how to
+@@ -170,14 +171,29 @@
+         match x.i with
+         | New _
+         | Call _ ->
+-            (* If we are inside a try-catch, we consider the possibility of this call
+-               * raising an exception, then we add a jump to catch-blocks. This could
+-               * lead to some false positives when running taint rules (since it's a
+-               * may-analysis), but they are probably rare. For constant propagation
+-               * this should reduce false positives (since it's a must-analysis).
+-               * Ideally we should have a preceeding analysis that infers which calls
+-               * may (or may not) raise exceptions. *)
+-            state.g |> add_arc_opt_to_opt (Some newi, state.throw_destination);
++            let target = match state.exception_value with
++              | Some target -> target
++              | None ->
++                  let name = IL.{ ident = ("_escaping_exception", G.fake "exception");
++                    sid = G.SId.mk (); id_info = G.empty_id_info (); value_origin = None } in
++                  IL.{ base = Var name; rev_offset = [] } in
++            let args = match x.i with
++              | Call (_, callee, args) -> Unnamed callee :: args
++              | New (_, _, constructor, args) ->
++                  let callee = Option.value ~default:IL.{ e = Literal (G.Null (G.fake "new")); eorig = x.iorig } constructor in
++                  Unnamed callee :: args
++              | _ -> [] in
++            let exception_instr = IL.{ i =
++              CallSpecial (Some target, (ExceptionFromCall, G.fake "exception"), args); iorig = NoOrig } in
++            let exception_node = state.g#add_node (IL.mk_node (F.NInstr exception_instr)) in
++            state.g |> add_arc (newi, exception_node);
++            (match state.throw_destination with
++            | Some destination -> state.g |> add_arc (exception_node, destination)
++            | None ->
++                let throw = IL.mk_node (F.NThrow (G.fake "exception", IL.{ e = Fetch target; eorig = NoOrig })) in
++                let escaping = state.g#add_node throw in
++                state.g |> add_arc (exception_node, escaping);
++                state.g |> add_arc (escaping, state.exiti));
+             true
+         | AssignAnon ({ base = Var name; rev_offset = [] }, Lambda fdef) ->
+             let lambda_cfg = cfg_of_fdef fdef in
+@@ -245,7 +261,7 @@
+       state.g |> add_arc_from_opt (previ, newi);
+       state.g |> add_arc (newi, state.exiti);
+       CfgFirstLast (newi, None, false)
+-  | Try (try_st, catches, else_st, finally_st) ->
++  | Try (try_st, catches, else_st, finally_st, complete_dispatch) ->
+       (* previ ->
+        * newi ->
+        * try -> catchesi --> catch1 -|
+@@ -265,7 +281,10 @@
+       state.g |> add_arc_from_opt (previ, newi);
+ 
+       (* Inside try may go to catches. *)
+-      let try_state = { state with throw_destination = Some catchesi } in
++      let exception_value = match catches with
++        | (name, _) :: _ -> Some IL.{ base = Var name; rev_offset = [] }
++        | [] -> state.exception_value in
++      let try_state = { state with throw_destination = Some catchesi; exception_value } in
+       let finaltry, try_may_throw =
+         cfg_stmt_list try_state (Some newi) try_st
+       in
+@@ -298,7 +317,12 @@
+       state.g |> add_arc_from_opt (finalelse, newfakefinally);
+ 
+       (* In case of uncaught exceptions. *)
+-      state.g |> add_arc_opt_to_opt (Some catchesi, throw_destination);
++      (if not complete_dispatch || List.is_empty catches then match exception_value with
++      | Some source ->
++          let propagation_state = { state with throw_destination } in
++          ignore (cfg_stmt propagation_state (Some catchesi)
++            IL.{ s = Throw (G.fake "uncaught", { e = Fetch source; eorig = NoOrig }) })
++      | None -> state.g |> add_arc_opt_to_opt (Some catchesi, throw_destination));
+ 
+       (* Same reasoning as the else clause above for the catch clauses. *)
+       let catch_state = { state with throw_destination } in
+@@ -326,8 +350,8 @@
+       let may_throw =
+         try_may_throw || else_may_throw || catch_may_throw || finally_may_throw
+       in
+-      if may_throw then
+-        state.g |> add_arc_opt_to_opt (finalfinally, state.throw_destination);
++      (* Exceptional edges already leave the throwing instruction. Normal
++       * completion must not re-enter an enclosing catch. *)
+ 
+       (* For now, just always assume dataflow may continue after the try-catch-else-finally
+        * clause. It's possible that short-circuit the dataflow, but it may be tricky
+@@ -335,10 +359,17 @@
+        *)
+       CfgFirstLast (newi, finalfinally, may_throw)
+   | Throw (tok, e) ->
+-      let newi = state.g#add_node (IL.mk_node (F.NThrow (tok, e))) in
+-      state.g |> add_arc_from_opt (previ, newi);
+-      state.g |> add_arc_opt_to_opt (previ, state.throw_destination);
+-      CfgFirstLast (newi, None, true)
++      let first, last, value = match state.exception_value with
++        | Some target ->
++            let bind = IL.{ i = Assign (target, e); iorig = NoOrig } in
++            let bind_node = state.g#add_node (IL.mk_node (F.NInstr bind)) in
++            state.g |> add_arc_from_opt (previ, bind_node);
++            (Some bind_node, Some bind_node, IL.{ e = Fetch target; eorig = NoOrig })
++        | None -> (None, previ, e) in
++      let newi = state.g#add_node (IL.mk_node (F.NThrow (tok, value))) in
++      state.g |> add_arc_from_opt (last, newi);
++      state.g |> add_arc (newi, state.throw_destination ||| state.exiti);
++      CfgFirstLast (Option.value ~default:newi first, None, true)
+   | MiscStmt x ->
+       let newi = state.g#add_node (IL.mk_node (F.NOther x)) in
+       state.g |> add_arc_from_opt (previ, newi);
+@@ -422,6 +453,7 @@
+ (*****************************************************************************)
+ 
+ and cfg_of_stmts ?tok (xs : stmt list) : IL.cfg * IL.lambdas_cfgs =
++  let xs = IL_finally.normalize xs in
+   (* yes, I sometimes use objects, and even mutable objects in OCaml ... *)
+   let g = new Ograph_extended.ograph_mutable in
+ 
+@@ -438,6 +470,7 @@
+       labels = Hashtbl.create 10;
+       gotos = ref [];
+       throw_destination = None;
++      exception_value = None;
+       lambdas_cfgs = ref NameMap.empty;
+     }
+   in
+--- a/src/analyzing/Eval_il_partial.ml
++++ b/src/analyzing/Eval_il_partial.ml
+@@ -277,6 +277,8 @@
+   | ArrayHole _
+   | Composite _
+   | RecordOrDict _
++  | BoundCallTarget _
++  | ExceptionTypeIs _
+   | Cast _
+   | FixmeExp _ ->
+       G.NotCst
+--- a/src/analyzing/Fold_IL_params.ml
++++ b/src/analyzing/Fold_IL_params.ml
+@@ -35,6 +35,8 @@
+       fun acc par ->
+         match par with
+         | Param { pname = name; pdefault }
++        | ParamAll { pname = name; pdefault }
++        | ParamKeywordRest { pname = name; pdefault }
+         | ParamRest { pname = name; pdefault } ->
+             f acc name.ident name.id_info pdefault
+         | ParamPattern ({ pname = name; pdefault }, pat) ->
+@@ -67,6 +69,8 @@
+       fun acc par ->
+         match par with
+         | Param { pname = name; pdefault }
++        | ParamAll { pname = name; pdefault }
++        | ParamKeywordRest { pname = name; pdefault }
+         | ParamRest { pname = name; pdefault }
+         | ParamPattern ({ pname = name; pdefault }, _) ->
+             f acc name.ident name.id_info pdefault
+--- a/src/analyzing/Visit_function_defs.ml
++++ b/src/analyzing/Visit_function_defs.ml
+@@ -187,13 +187,11 @@
+    - Nested function: [None; Some parent_func; Some nested_func] (excluding current function)
+ *)
+ 
+-(* Convert G.name to IL.name for fn_id path construction.
+-   Uses unsafe_default sid and clears id_resolved to ensure consistent
+-   comparison in FunctionMap (which compares by string name + position). *)
++(* Function paths use name and position for identity; retain binding metadata
++   so class receivers can be resolved without conflating shadowed names. *)
+ let g_name_to_il_name (g_name : G.name) : IL.name option =
+   match g_name with
+   | G.Id ((str, tok), id_info) ->
+-      let id_info = { id_info with G.id_resolved = ref None } in
+       Some IL.{ ident = (str, tok); sid = G.SId.unsafe_default; id_info; value_origin = None }
+   | _ -> None
+ 
+--- a/src/il/Display_IL.ml
++++ b/src/il/Display_IL.ml
+@@ -69,6 +69,8 @@
+   | FixmeExp _ -> "<FIXME-EXP>"
+   | Composite (_, _) -> "<COMPOSITE>"
+   | RecordOrDict _ -> "<RECORD-OR-DICT>"
++  | BoundCallTarget (callee, _) -> string_of_exp callee
++  | ExceptionTypeIs (_, _) -> "<EXCEPTION-TYPE>"
+   | Cast (_, _) -> "<CAST>"
+ 
+ and string_of_exp e = string_of_exp_kind e.e
+@@ -76,6 +78,7 @@
+ let string_of_argument arg =
+   match arg with
+   | Unnamed e
++  | KeywordSpread e
+   | Named (_, e) ->
+       string_of_exp e
+ 
+--- a/src/il/IL.ml
++++ b/src/il/IL.ml
+@@ -192,12 +192,14 @@
+ 
+ type param =
+   | Param of name_param
++  | ParamAll of name_param
+   | ParamRest of name_param
++  | ParamKeywordRest of name_param
+   | ParamPattern of name_param * G.pattern
+   | ParamFixme
+ [@@deriving show { with_path = false }]
+ 
+-type 'a argument = Unnamed of 'a | Named of ident * 'a
++type 'a argument = Unnamed of 'a | Named of ident * 'a | KeywordSpread of 'a
+ [@@deriving show { with_path = false }]
+ 
+ (*****************************************************************************)
+@@ -229,7 +231,9 @@
+     method visit_param env param =
+       match param with
+       | Param { pname; pdefault = _ }
++      | ParamAll { pname; pdefault = _ }
+       | ParamRest { pname; pdefault = _ }
++    | ParamKeywordRest { pname; pdefault = _ }
+       | ParamPattern ({ pname; pdefault = _ }, _) ->
+           self#visit_name env pname
+       | ParamFixme -> ()
+@@ -238,7 +242,7 @@
+         : 'a. ('env -> 'a -> unit) -> 'env -> 'a argument -> unit =
+       fun f env arg ->
+         match arg with
+-        | Unnamed x -> f env x
++        | Unnamed x | KeywordSpread x -> f env x
+         | Named (ident, x) ->
+             self#visit_ident env ident;
+             f env x
+@@ -344,6 +348,8 @@
+    *     constructor, followed by a series of Assign with Dot? simpler?
+    *)
+   | RecordOrDict of field_or_entry list
++  | BoundCallTarget of exp * exp
++  | ExceptionTypeIs of exp * string list
+   | Cast of G.type_ * exp
+   (* This could be put in call_special, but dumped IL are then less readable
+    * (they are too many intermediate _tmp variables then) *)
+@@ -394,10 +400,17 @@
+   (* old: better in exp: | Operator of G.arithmetic_operator *)
+   | Concat (* THINK: Normalize as a Operator G.Concat ? *)
+   | SpreadFn
++  | EncodedString of string
++  | SliceSequence
++  | PythonEllipsis
++  | MakeException of string
++  | ExceptionFromCall
++  | FinallyLimit of orig
+   | Yield
+   | Await
+   (* C++ *)
+   | Delete
++  | DeleteProperty
+   (* was in stmt before, but with a new clean 'instr' type, better here *)
+   | Assert
+   (* was in expr before (only in C/PHP) *)
+@@ -408,6 +421,8 @@
+   | ForeachHasNext
+   (* JS: require('foo') *)
+   | Require
++  | Export
++  | TemplateObject
+ 
+ (* primitives called under the hood *)
+ 
+@@ -442,6 +457,7 @@
+       * (name * stmt list) list (* catches *)
+       * stmt list (* else *)
+       * stmt list
++      * bool (* complete ordered catch dispatch *)
+     (* finally / THINK: no finally vs empty finally ? use `option` ? *)
+   | Throw of tok * exp (* less: enforce lval here? *)
+   | MiscStmt of other_stmt
+--- a/src/il/IL_helpers.ml
++++ b/src/il/IL_helpers.ml
+@@ -26,7 +26,7 @@
+ 
+ let exp_of_arg arg =
+   match arg with
+-  | Unnamed exp -> exp
++  | Unnamed exp | KeywordSpread exp -> exp
+   | Named (_, exp) -> exp
+ 
+ (* Hash table keyed by the physical identity of an [exp]. Cross-call
+@@ -83,6 +83,8 @@
+   | Operator _ -> 5
+   | FixmeExp _ -> 6
+   | ArrayHole _ -> 7
++  | ExceptionTypeIs _ -> 8
++  | BoundCallTarget _ -> 9
+ 
+ let rec compare_exp (e1 : exp) (e2 : exp) : int =
+   if phys_equal e1 e2 then 0
+@@ -98,6 +100,12 @@
+           let c = compare_composite_kind k1 k2 in
+           if c <> 0 then c else List.compare compare_exp xs1 xs2
+       | RecordOrDict f1, RecordOrDict f2 -> List.compare compare_field f1 f2
++      | BoundCallTarget (callee1, receiver1), BoundCallTarget (callee2, receiver2) ->
++          let order = compare_exp callee1 callee2 in
++          if order <> 0 then order else compare_exp receiver1 receiver2
++      | ExceptionTypeIs (a, kinds1), ExceptionTypeIs (b, kinds2) ->
++          let order = compare_exp a b in
++          if order <> 0 then order else List.compare String.compare kinds1 kinds2
+       | Cast (t1, a), Cast (t2, b) ->
+           let c = G.compare_type_ t1 t2 in
+           if c <> 0 then c else compare_exp a b
+@@ -141,8 +149,11 @@
+   | Named (id1, e1), Named (id2, e2) ->
+       let c = String.compare (fst id1) (fst id2) in
+       if c <> 0 then c else compare_exp e1 e2
+-  | Unnamed _, Named _ -> -1
++  | KeywordSpread e1, KeywordSpread e2 -> compare_exp e1 e2
++  | Unnamed _, (Named _ | KeywordSpread _) -> -1
+   | Named _, Unnamed _ -> 1
++  | Named _, KeywordSpread _ -> -1
++  | KeywordSpread _, (Unnamed _ | Named _) -> 1
+ 
+ and compare_field (f1 : field_or_entry) (f2 : field_or_entry) : int =
+   match (f1, f2) with
+@@ -186,6 +197,8 @@
+             List.map (fun a -> hash_exp_fuel f (exp_of_arg a)) args )
+     | FixmeExp _ -> 6
+     | ArrayHole _ -> 7
++    | BoundCallTarget (callee, receiver) -> Stdlib.Hashtbl.hash (9, hash_exp_fuel f callee, hash_exp_fuel f receiver)
++    | ExceptionTypeIs (value, kinds) -> Stdlib.Hashtbl.hash (8, hash_exp_fuel f value, kinds)
+ 
+ and hash_lval (fuel : int) (lval : lval) : int =
+   Stdlib.Hashtbl.hash
+@@ -223,6 +236,13 @@
+   | RecordOrDict entries ->
+       let acc, entries = List.fold_left_map (fold_map_field f) acc entries in
+       (acc, { e with e = RecordOrDict entries })
++  | BoundCallTarget (callee, receiver) ->
++      let acc, callee = f acc callee in
++      let acc, receiver = f acc receiver in
++      (acc, {e with e = BoundCallTarget (callee, receiver)})
++  | ExceptionTypeIs (value, kinds) ->
++      let acc, value = f acc value in
++      (acc, {e with e = ExceptionTypeIs (value, kinds)})
+   | Cast (t, a) ->
+       let acc, a = f acc a in
+       (acc, { e with e = Cast (t, a) })
+@@ -241,6 +261,9 @@
+   | Named (id, e) ->
+       let acc, e = f acc e in
+       (acc, Named (id, e))
++  | KeywordSpread e ->
++      let acc, e = f acc e in
++      (acc, KeywordSpread e)
+ 
+ and fold_map_field (f : 'a -> exp -> 'a * exp) (acc : 'a) :
+     field_or_entry -> 'a * field_or_entry = function
+@@ -262,7 +285,9 @@
+ let pname_of_param (p : IL.param) : IL.name option =
+   match p with
+   | IL.Param { pname; _ } -> Some pname
+-  | IL.ParamRest { pname; _ } -> Some pname
++  | IL.ParamRest { pname; _ }
++  | IL.ParamAll { pname; _ }
++  | IL.ParamKeywordRest { pname; _ } -> Some pname
+   | IL.ParamPattern ({ pname; _ }, _) -> Some pname
+   | IL.ParamFixme -> None
+ 
+@@ -333,6 +358,8 @@
+             | _ -> unanchorable)
+         | IL.VarSpecial _ | IL.Mem _ -> unanchorable)
+     | IL.Operator (_, args) -> of_exps (List.map exp_of_arg args)
++    | IL.BoundCallTarget (callee, receiver) -> of_exps [callee; receiver]
++    | IL.ExceptionTypeIs (e, _) -> of_exp e
+     | IL.Cast (_, e) -> of_exp e
+     | IL.Composite (_, (_, exps, _)) -> of_exps exps
+     | IL.RecordOrDict entries ->
+@@ -388,6 +415,8 @@
+   match e.e with
+   | Fetch lval -> lval :: lvals_in_lval lval
+   | Literal _ | ArrayHole _ -> []
++  | BoundCallTarget (callee, receiver) -> lvals_of_exp callee @ lvals_of_exp receiver
++  | ExceptionTypeIs (e, _) -> lvals_of_exp e
+   | Cast (_, e) -> lvals_of_exp e
+   | Composite (_, (_, xs, _)) -> lvals_of_exps xs
+   | Operator (_, xs) -> lvals_of_exps (List_.map exp_of_arg xs)
+@@ -687,3 +716,16 @@
+       | _ when has_complement_pair es ->
+           lit_bool ~eorig:(List.hd es).eorig true
+       | _ -> binary_fold_op G.Or es)
++
++let reads_name name statements =
++  let found = ref false in
++  let visitor = object
++    inherit [_] IL.iter as super
++    method! visit_exp () value =
++      (match value.IL.e with
++      | Fetch { base = Var read; _ } when IL.equal_name name read -> found := true
++      | _ -> ());
++      super#visit_exp () value
++  end in
++  List.iter (visitor#visit_stmt ()) statements;
++  !found
+--- a/src/il/IL_helpers.mli
++++ b/src/il/IL_helpers.mli
+@@ -134,3 +134,5 @@
+ 
+ val wrap_or : IL.exp list -> IL.exp
+ (** Smart n-ary [Or]; dual to [wrap_and]. *)
++
++val reads_name : IL.name -> IL.stmt list -> bool
+--- a/src/il/IL_pp.ml
++++ b/src/il/IL_pp.ml
+@@ -147,6 +147,8 @@
+   | ArrayHole _ -> "<hole>"
+   | Composite (ck, (_, exps, _)) -> pp_composite ck exps
+   | RecordOrDict fields -> pp_record_or_dict fields
++  | BoundCallTarget (callee, receiver) -> "bound_call(" ^ pp_exp callee ^ ", " ^ pp_exp receiver ^ ")"
++  | ExceptionTypeIs (value, kinds) -> "exception_matches(" ^ pp_exp value ^ ", " ^ String.concat "," kinds ^ ")"
+   | Cast (ty, e) -> Printf.sprintf "(%s)%s" (pp_type_ ty) (pp_exp e)
+   | Operator ((op, _), args) -> pp_operator_call op args
+   | FixmeExp (_, _, Some e) -> Printf.sprintf "<fixme>(%s)" (pp_exp e)
+@@ -199,7 +201,8 @@
+           (List.map
+              (function
+                | Unnamed e -> pp_exp e
+-               | Named ((s, _), e) -> Printf.sprintf "%s: %s" s (pp_exp e))
++               | Named ((s, _), e) -> Printf.sprintf "%s: %s" s (pp_exp e)
++               | KeywordSpread e -> "**" ^ pp_exp e)
+              args)
+       in
+       Printf.sprintf "__op_%s__(%s)" (pp_operator op) args_str
+@@ -226,6 +229,9 @@
+     | ArrayHole _ -> emit "<hole>"
+     | Composite (ck, (_, exps, _)) -> go_composite ck exps
+     | RecordOrDict fields -> go_record_or_dict fields
++    | BoundCallTarget (callee, receiver) -> emit "bound_call("; go callee; emit ", "; go receiver; emit ")"
++    | ExceptionTypeIs (value, kinds) ->
++        emit "exception_matches("; go value; emit (", " ^ String.concat "," kinds ^ ")")
+     | Cast (ty, e) ->
+         emit (Printf.sprintf "(%s)" (pp_type_ ty));
+         go e
+@@ -309,7 +315,8 @@
+             | Unnamed e -> go e
+             | Named ((s, _), e) ->
+                 emit (s ^ ": ");
+-                go e)
++                go e
++            | KeywordSpread e -> emit "**"; go e)
+           args;
+         emit ")"
+   in
+@@ -329,8 +336,15 @@
+   | Sizeof -> "sizeof"
+   | Concat -> "__concat__"
+   | SpreadFn -> "__spread__"
++  | EncodedString prefix -> "__encoded_string_" ^ prefix ^ "__"
++  | SliceSequence -> "__slice_sequence__"
++  | PythonEllipsis -> "__python_ellipsis__"
++  | MakeException name -> "__exception_" ^ name ^ "__"
++  | ExceptionFromCall -> "__exception_from_call__"
++  | FinallyLimit _ -> "__finally_path_limit__"
+   | Yield -> "yield"
+   | Await -> "await"
++  | DeleteProperty -> "delete-property"
+   | Delete -> "delete"
+   | Assert -> "assert"
+   | Ref -> "__ref__"
+@@ -338,6 +352,8 @@
+   | ForeachKeys -> "__foreach_keys__"
+   | ForeachHasNext -> "__foreach_has_next__"
+   | Require -> "require"
++  | Export -> "export"
++  | TemplateObject -> "template_object"
+ 
+ (*****************************************************************************)
+ (* Arguments *)
+@@ -347,6 +363,7 @@
+   match arg with
+   | Unnamed v -> pp_val v
+   | Named ((s, _), v) -> Printf.sprintf "%s: %s" s (pp_val v)
++  | KeywordSpread v -> "**" ^ pp_val v
+ 
+ let pp_args args = String.concat ", " (List.map (pp_arg pp_exp) args)
+ 
+@@ -408,7 +425,7 @@
+   | Label lbl ->
+       (* Labels are dedented by one level conventionally *)
+       Printf.sprintf "%s%s:" (if level > 0 then indent (level - 1) else "") (pp_label lbl)
+-  | Try (body, catches, else_stmts, finally) ->
++  | Try (body, catches, else_stmts, finally, _complete_dispatch) ->
+       pp_try ~level body catches else_stmts finally
+   | Throw (_, e) ->
+       Printf.sprintf "%sthrow %s;" ind (pp_exp e)
+@@ -463,7 +480,9 @@
+ let pp_param p =
+   match p with
+   | Param { pname; _ } -> pp_name pname
++  | ParamAll { pname; _ } -> "arguments:" ^ pp_name pname
+   | ParamRest { pname; _ } -> "..." ^ pp_name pname
++  | ParamKeywordRest { pname; _ } -> "**" ^ pp_name pname
+   | ParamPattern ({ pname; _ }, _) -> "<pattern>" ^ pp_name pname
+   | ParamFixme -> "<fixme>"
+ 
+--- a/src/matching/Generic_vs_generic.ml
++++ b/src/matching/Generic_vs_generic.ml
+@@ -1265,6 +1265,10 @@
+   | G.StmtExpr a1, B.StmtExpr b1 -> m_stmt a1 b1
+   (* implicit return *)
+   | G.StmtExpr { s = G.Return (_, Some a, _); _ }, _ -> m_implicit_return a b
++  | G.OtherExpr (("Arguments", a), []),
++      B.OtherExpr (("Arguments", b), [B.Name _; B.Tk _])
++  | G.OtherExpr (("Arguments", a), []), B.OtherExpr (("MappedArguments", b), []) ->
++      m_tok a b
+   | G.OtherExpr (a1, a2), B.OtherExpr (b1, b2) ->
+       m_todo_kind a1 b1 >>= fun () -> (m_list_with_ellipsis_any m_any) a2 b2
+   | G.RawExpr a, B.RawExpr b -> m_raw_tree a b
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -1383,7 +1383,8 @@
+   let visitor = new resolve_visitor env lang
+   in
+   visitor#visit_program () prog;
+-  if Lang.is_js lang then Javascript_bindings.resolve prog
++  if lang =*= Lang.Python then Python_bindings.resolve prog
++  else if Lang.is_js lang then Javascript_bindings.resolve prog
+   else if lang =*= Lang.Rust then Rust_type_names.resolve_program prog
+   else if lang =*= Lang.Swift then Swift_operator_resolution.resolve_program prog
+   else prog

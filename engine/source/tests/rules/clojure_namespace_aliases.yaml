@@ -1,0 +1,6 @@
+rules:
+  - id: namespace-alias
+    languages: [clojure]
+    message: Namespace alias resolves to the declared library
+    severity: ERROR
+    pattern: (example.api/read-input)

@@ -1,0 +1,45 @@
+{
+  "rules": [
+    {
+      "id": "callback-occurrence",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Callback model applies to the selected callable",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "register($CALLBACK)"
+            },
+            {
+              "focus-metavariable": "$CALLBACK"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink($VALUE)"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+diff --git a/src/tainting/Sig_inst.ml b/src/tainting/Sig_inst.ml
+index 759ca52..78562d0 100644
+--- a/src/tainting/Sig_inst.ml
++++ b/src/tainting/Sig_inst.ml
+@@ -360,37 +360,25 @@ let find_pos_in_actual_args ?(err_ctx = "???") (args : 'a IL.argument list)
+        | _ -> None)
+   in
+   let rec merge formal_args_with_vals pos_args =
+-     match formal_args_with_vals, pos_args with
+-     (* No more formal args, no more actual args: we're done *)
+-     | [], [] -> []
+-     (* No more formal args, but there are still positional args *)
+-     | [], _ ->
++    match formal_args_with_vals, pos_args with
++    | [], [] -> []
++    | [], _ ->
+         Log.err (fun m ->
+-          m "function applied to more arguments than expected by the signature (%s)" err_ctx);
+-          []
+-     (* The formal arg doesn't get a value (not found among named args, 
+-      * and no more positional args) *)
+-     | None :: _ , []
+-     | Some (Signature.P _, None) :: _, [] ->
+-        Log.err (fun m ->
+-          m "function applied to fewer arguments than expected by the signature (%s)" err_ctx);
+-          []
+-     (* The value for the formal arg is found among named actual args *)
+-     | Some (Signature.P name, Some v) :: avs, _
+-     | Some (Signature.PRest name, Some v) :: avs, _ (* possible? *) ->
+-        (Some name, v) :: merge avs pos_args
+-     (* Not found among named actual args, so we assign the first 
+-      * available positional arg *)
+-     | Some (Signature.P name, None) :: name_vals, v :: pos_args ->
+-        (Some name, v) :: merge name_vals pos_args
+-     (* The rest argument takes all positional args *)
+-     | Some (Signature.PRest name, None) :: name_vals, _ ->
+-        (Some name, combine_rest_args pos_args) :: merge name_vals []
+-     (* The formal arg does not have a name *)
+-     | None :: name_vals, v :: pos_args ->
+-         (None, v) :: merge name_vals pos_args
+-     | Some (Signature.Other, _) :: _, _ ->
+-         raise Impossible
++            m "function applied to more arguments than expected by the signature (%s)" err_ctx);
++        []
++    | Some (Signature.P name, Some value) :: rest, _
++    | Some (Signature.PRest name, Some value) :: rest, _ ->
++        (Some name, Some value) :: merge rest pos_args
++    | Some (Signature.PRest name, None) :: rest, _ ->
++        (Some name, Some (combine_rest_args pos_args)) :: merge rest []
++    | Some (Signature.P name, None) :: rest, value :: remaining ->
++        (Some name, Some value) :: merge rest remaining
++    | Some (Signature.P name, None) :: rest, [] ->
++        (Some name, None) :: merge rest []
++    | None :: rest, value :: remaining ->
++        (None, Some value) :: merge rest remaining
++    | None :: rest, [] -> (None, None) :: merge rest []
++    | Some (Signature.Other, _) :: _, _ -> raise Impossible
+   in
+   let name_opt_value_list = merge formal_args_with_vals pos_args in
+   let param_index_array = Array.of_list (List.map snd name_opt_value_list) in
+@@ -403,14 +391,14 @@ let find_pos_in_actual_args ?(err_ctx = "???") (args : 'a IL.argument list)
+   (* lookup function *)
+   fun ({ name = s; index = i } : Taint.arg) ->
+     match SMap.find_opt s param_name_map with
+-    | Some _ as r -> r
++    | Some value -> value
+     | _ when i < 0 || i >= Array.length param_index_array ->
+         Log.debug (fun m ->
+           (* TODO: provide more context for debugging *)
+           m ~tags:bad_tag
+             "Cannot match taint variable with function arguments (%i: %s)" i s);
+         None
+-    | _ -> Some (Array.get param_index_array i)
++    | _ -> Array.get param_index_array i
+ 
+ (* Test find_pos_in_actual_args.
+  * Function: foo(x, y, _, z)
+@@ -430,6 +418,41 @@ let%test _ =
+   Option.equal (=|=) (func {name = "";  index = 2})  (Some 2) &&
+   Option.equal (=|=) (func {name = "";  index = 3})  (Some 3)
+ 
++let%test _ =
++  let params = Signature.([P "optional"; P "value"; P "last"]) in
++  let args = IL.([Named (("value", G.fake ""), 7)]) in
++  let find = find_pos_in_actual_args args params ~combine_rest_args:List.hd in
++  Option.is_none (find {T.name="optional"; index=0}) &&
++  Option.equal Int.equal (find {T.name="value"; index=1}) (Some 7) &&
++  Option.equal Int.equal (find {T.name=""; index=1}) (Some 7) &&
++  Option.is_none (find {T.name="last"; index=2})
++
++let%test _ =
++  let params = Signature.([Other; P "optional"; PRest "remaining"; P "last"]) in
++  let named name value = IL.Named ((name, G.fake ""), value) in
++  let args = IL.([Unnamed 2; named "last" 9]) in
++  let find = find_pos_in_actual_args args params ~combine_rest_args:(List.fold_left (+) 0) in
++  Option.equal Int.equal (find {T.name=""; index=0}) (Some 2) &&
++  Option.is_none (find {T.name="optional"; index=1}) &&
++  Option.equal Int.equal (find {T.name="remaining"; index=2}) (Some 0) &&
++  Option.equal Int.equal (find {T.name="last"; index=3}) (Some 9)
++
++let%test _ =
++  let params = Signature.([P "first"; PRest "remaining"; P "last"]) in
++  let args = IL.([Unnamed 2; Unnamed 3; Unnamed 4; Named (("last", G.fake ""), 9)]) in
++  let find = find_pos_in_actual_args args params ~combine_rest_args:(List.fold_left (+) 0) in
++  Option.equal Int.equal (find {T.name="first"; index=0}) (Some 2) &&
++  Option.equal Int.equal (find {T.name="remaining"; index=1}) (Some 7) &&
++  Option.equal Int.equal (find {T.name="last"; index=2}) (Some 9) &&
++  Option.is_none (find {T.name=""; index=3})
++
++let%test _ =
++  let find = find_pos_in_actual_args [] Signature.([Other; P "optional"])
++      ~combine_rest_args:(List.fold_left (+) 0) in
++  Option.is_none (find {T.name=""; index=0}) &&
++  Option.is_none (find {T.name="optional"; index=1}) &&
++  Option.is_none (find {T.name=""; index=(-1)})
++
+ let combine_rest_args_exp (es : IL.exp list) : IL.exp =
+   let e = IL.Composite (IL.CList, Tok.unsafe_fake_bracket es) in
+   let eorig =
+diff --git a/src/tainting/dune b/src/tainting/dune
+index 6695108..5a7a876 100644
+--- a/src/tainting/dune
++++ b/src/tainting/dune
+@@ -2,6 +2,7 @@
+  (public_name semgrep.tainting)
+  (name semgrep_tainting)
+  (wrapped false)
++ (inline_tests)
+  (libraries
+    pfff-lang_GENERIC-analyze
+    semgrep_core

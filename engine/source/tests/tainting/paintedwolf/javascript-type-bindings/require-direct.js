@@ -1,0 +1,2 @@
+// ruleid: binding
+require("trusted")();

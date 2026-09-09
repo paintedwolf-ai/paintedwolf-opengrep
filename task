@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Repo-local Task runner (pinned version in .bin/). Prefer bare `task` with direnv — see README.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+exec "${ROOT}/scripts/task.sh" "$@"

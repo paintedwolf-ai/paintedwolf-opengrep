@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Value-specific sanitizer",
+      "severity": "ERROR",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "typed()",
+          "exact": true,
+          "value-type": "string-or-null"
+        },
+        {
+          "pattern": "untyped()",
+          "exact": true
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "pattern": "sanitize($VALUE)",
+          "exact": true,
+          "requires-value-type": {
+            "metavariable": "$VALUE",
+            "type": "string-or-null"
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink(...)"
+        }
+      ]
+    }
+  ]
+}

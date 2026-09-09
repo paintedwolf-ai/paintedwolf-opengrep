@@ -1,0 +1,14 @@
+diff --git a/src/core/Semgrep_output_utils.ml b/src/core/Semgrep_output_utils.ml
+--- a/src/core/Semgrep_output_utils.ml
++++ b/src/core/Semgrep_output_utils.ml
+@@ -75,6 +75,10 @@
+ 
+ let position_range min_loc max_loc =
+   let end_line, end_col, end_charpos = Tok.end_pos_of_loc max_loc in
++  let end_line, end_col =
++    if String.ends_with ~suffix:"\n" max_loc.Tok.str then (end_line + 1, 0)
++    else (end_line, end_col)
++  in
+   (* alt: could call position_of_token_location but more symmetric like that. *)
+   ( {
+       line = min_loc.Tok.pos.line;

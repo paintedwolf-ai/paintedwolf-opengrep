@@ -1,0 +1,75 @@
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -194,7 +194,7 @@
+   let value_path_obj =
+     match sink_value_path with
+     | [] -> []
+-    | path -> [ ("value-path", `A (List_.map (fun i -> `Float (float_of_int i)) path)) ]
++    | path -> [ ("value-path", `A (List_.map (function ValueIndex i -> `Float (float_of_int i) | ValueField field -> `String field) path)) ]
+   in
+   `O (List_.flatten [ sink_f; value_path_obj; exact_obj; requires_obj; at_exit_obj; translate_model_constraint sink_requires_model_type ])
+ 
+--- a/src/parsing/Parse_rule.ml
++++ b/src/parsing/Parse_rule.ml
+@@ -542,19 +542,21 @@
+         parse_from_dict dict Parse_rule_formula.parse_formula_from_dict
+ 
+ let parse_sink_value_path env key value =
+-  let index env expression =
++  let component env expression =
+     match expression.G.e with
+     | G.L (Int (Some number, _))
+       when Int64.compare number 0L >= 0 && Int64.compare number 2147483647L <= 0 ->
+-        Ok (Int64.to_int number)
++        Ok (R.ValueIndex (Int64.to_int number))
+     | G.L (Float (Some number, _))
+       when number >= 0. && number <= 2147483647. && Float.is_integer number ->
+-        Ok (int_of_float number)
+-    | _ -> error_at_key env.id key "value-path indices must be nonnegative integers at most 2147483647"
+-  in
+-  let/ path = parse_listi env key index value in
++        Ok (R.ValueIndex (int_of_float number))
++    | G.L (String (_, (field, _), _)) when String.length field > 0 ->
++        Ok (R.ValueField field)
++    | _ -> error_at_key env.id key "value-path components must be nonempty field names or nonnegative integers at most 2147483647"
++  in
++  let/ path = parse_listi env key component value in
+   if List.is_empty path || List.length path > 16 then
+-    error_at_key env.id key "value-path requires between 1 and 16 array indices"
++    error_at_key env.id key "value-path requires between 1 and 16 components"
+   else Ok path
+ 
+ let parse_taint_sink ~(is_old : bool) env (key : key) (value : G.expr) :
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -297,6 +297,8 @@
+        *)
+ }
+ 
++and taint_value_path_component = ValueIndex of int | ValueField of string
++
+ and taint_sink = {
+   sink_id : string;  (** See 'Parse_rule.parse_taint_sink'. *)
+   sink_formula : formula;
+@@ -312,8 +314,8 @@
+        * The sink will only trigger a finding if the data that reaches it
+        * has a set of labels attached that satisfies the 'requires'.
+        *)
+-  sink_value_path : int list;
+-      (** Array indices selecting the consumed value inside the focused sink. *)
++  sink_value_path : taint_value_path_component list;
++      (** Field names and array indices selecting the consumed sink value. *)
+   sink_at_exit : bool;
+       (* Whether this sink only applies to instructions at exit positions. *)
+   sink_has_focus : bool;
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -695,7 +695,7 @@
+ let effects_of_tainted_sinks env ?(shape = S.Bot) taints sinks : Effect.t list =
+   sinks
+   |> List.concat_map (fun sink ->
+-         let offsets = List_.map (fun i -> T.Oint i) sink.Effect.rule_sink.R.sink_value_path in
++         let offsets = List_.map (function R.ValueIndex i -> T.Oint i | R.ValueField field -> T.Ostr field) sink.Effect.rule_sink.R.sink_value_path in
+          let selected_taints =
+            match Shape.find_in_shape_poly ~taints offsets shape with
+            | None -> Taints.empty

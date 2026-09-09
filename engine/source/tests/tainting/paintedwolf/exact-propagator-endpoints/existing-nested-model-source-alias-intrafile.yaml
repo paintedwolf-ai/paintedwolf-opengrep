@@ -1,0 +1,48 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true,
+          "model-type": "Builder"
+        },
+        {
+          "pattern": "step($X)",
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$X",
+            "type": "Builder"
+          },
+          "model-type": "Builder"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$X",
+            "type": "Builder"
+          }
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

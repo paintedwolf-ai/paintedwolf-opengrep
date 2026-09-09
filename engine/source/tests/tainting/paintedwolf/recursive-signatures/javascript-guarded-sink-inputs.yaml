@@ -1,0 +1,22 @@
+rules:
+- id: recursive-flow
+  languages:
+  - javascript
+  message: Request input reaches command execution
+  severity: ERROR
+  mode: taint
+  options:
+    taint_intrafile: true
+    guarded_taint_signatures: true
+  pattern-sources:
+  - pattern: sourceA()
+    exact: true
+    label: A
+  - pattern: sourceB()
+    exact: true
+    label: B
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE
+    requires: A and B

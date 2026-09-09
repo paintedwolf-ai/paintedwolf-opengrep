@@ -1,0 +1,339 @@
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -770,9 +770,318 @@
+     required:
+       - metavariable-type
+     additionalProperties: false
++  callable-origin:
++    type: object
++    properties:
++      module: &id001
++        type: string
++        minLength: 1
++        maxLength: 256
++      symbol: &id002
++        type: array
++        maxItems: 16
++        items: *id001
++        minItems: 1
++    required:
++    - module
++    - symbol
++    additionalProperties: false
++  callable-type:
++    oneOf:
++    - type: object
++      properties:
++        builtin:
++          enum:
++          - string
++          - bool
++          - int
++          - float
++          - number
++          - 'null'
++          - undefined
++          - unit
++          - port
++          - record
++      required:
++      - builtin
++      additionalProperties: false
++    - type: object
++      properties:
++        union:
++          type: array
++          maxItems: 32
++          items: &id003
++            $ref: '#/$defs/callable-type'
++          minItems: 2
++          uniqueItems: true
++      required:
++      - union
++      additionalProperties: false
++    - type: object
++      properties:
++        module: *id001
++        symbol: *id002
++        arguments:
++          type: array
++          maxItems: 64
++          items: *id003
++      required:
++      - module
++      - symbol
++      additionalProperties: false
++    - type: object
++      properties:
++        parameter: *id001
++      required:
++      - parameter
++      additionalProperties: false
++    - type: object
++      properties:
++        optional: *id003
++      required:
++      - optional
++      additionalProperties: false
++    - type: object
++      properties:
++        metatype: *id003
++      required:
++      - metatype
++      additionalProperties: false
++    - type: object
++      properties:
++        function:
++          type: object
++          properties:
++            parameters:
++              type: array
++              maxItems: 64
++              items: *id003
++            result: *id003
++          required:
++          - parameters
++          - result
++          additionalProperties: false
++      required:
++      - function
++      additionalProperties: false
++    - type: object
++      properties:
++        reference:
++          type: object
++          properties:
++            mutable:
++              type: boolean
++            type: *id003
++          required:
++          - mutable
++          - type
++          additionalProperties: false
++      required:
++      - reference
++      additionalProperties: false
++    - type: object
++      properties:
++        existential:
++          type: array
++          maxItems: 32
++          items:
++            $ref: '#/$defs/callable-origin'
++          minItems: 1
++          uniqueItems: true
++      required:
++      - existential
++      additionalProperties: false
++  callable-formal:
++    type: object
++    properties:
++      type: *id003
++      label: *id001
++      evaluation:
++        enum:
++        - eager
++        - autoclosure
++      cardinality:
++        enum:
++        - fixed
++        - variadic
++    required:
++    - type
++    additionalProperties: false
++  callable-declaration:
++    type: object
++    properties:
++      id: *id001
++      origin:
++        $ref: '#/$defs/callable-origin'
++      kind: &id004
++        enum:
++        - operator
++        - function
++        - method
++        - property
++      owner: *id003
++      receiver:
++        enum:
++        - owned
++        - shared
++        - mutable
++      generics:
++        type: array
++        maxItems: 32
++        items:
++          type: object
++          properties:
++            name: *id001
++            conforms-to:
++              type: array
++              maxItems: 32
++              items:
++                $ref: '#/$defs/callable-origin'
++              minItems: 1
++              uniqueItems: true
++          required:
++          - name
++          additionalProperties: false
++      parameters:
++        type: array
++        maxItems: 64
++        items:
++          $ref: '#/$defs/callable-formal'
++      result: *id003
++    required:
++    - id
++    - origin
++    - kind
++    - parameters
++    - result
++    additionalProperties: false
++  callable-visible-import:
++    type: object
++    properties:
++      module: *id001
++      mode:
++        enum:
++        - all
++        - module
++        - selective
++      alias: *id001
++      symbols:
++        type: array
++        maxItems: 64
++        items:
++          type: object
++          properties:
++            symbol: *id002
++            alias: *id001
++            category: *id001
++          required:
++          - symbol
++          additionalProperties: false
++        minItems: 1
++        uniqueItems: true
++    required:
++    - module
++    - mode
++    additionalProperties: false
++  callable-type-fact:
++    type: object
++    properties:
++      type: *id003
++      representation:
++        enum:
++        - string
++        - bool
++        - int
++        - float
++        - number
++        - 'null'
++        - undefined
++        - unit
++        - port
++        - record
++      conforms-to:
++        type: array
++        maxItems: 32
++        items:
++          $ref: '#/$defs/callable-origin'
++        minItems: 1
++        uniqueItems: true
++      associated-types:
++        type: array
++        maxItems: 32
++        items:
++          type: object
++          properties:
++            origin:
++              $ref: '#/$defs/callable-origin'
++            type: *id003
++          required:
++          - origin
++          - type
++          additionalProperties: false
++    required:
++    - type
++    additionalProperties: false
++  callable-lookup:
++    type: object
++    properties:
++      kind: *id004
++      name: *id001
++      receiver: *id003
++      arguments:
++        type: array
++        maxItems: 64
++        items:
++          $ref: '#/$defs/callable-formal'
++      selected: *id001
++    required:
++    - kind
++    - name
++    - arguments
++    - selected
++    additionalProperties: false
++  callable-type-binding:
++    type: object
++    properties:
++      name: *id002
++      type: *id003
++    required:
++    - name
++    - type
++    additionalProperties: false
++  callable-profile:
++    type: object
++    properties:
++      type-bindings:
++        type: array
++        maxItems: 128
++        items:
++          $ref: '#/$defs/callable-type-binding'
++      imports:
++        type: array
++        maxItems: 64
++        items:
++          $ref: '#/$defs/callable-visible-import'
++        uniqueItems: true
++      type-facts:
++        type: array
++        maxItems: 128
++        items:
++          $ref: '#/$defs/callable-type-fact'
++      lookups:
++        type: array
++        maxItems: 256
++        items:
++          $ref: '#/$defs/callable-lookup'
++    required:
++    - imports
++    - lookups
++    additionalProperties: false
+   import-model:
+     type: object
+     properties:
++      callables: {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/callable-declaration"}}
++      callable-profiles: {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/callable-profile"}}
+       implicit:
+         type: array
+         maxItems: 64
+@@ -821,6 +1130,8 @@
+       - required: [implicit]
+       - required: [exports]
+       - required: [complete-exports]
++      - required: [callables]
++      - required: [callable-profiles]
+     additionalProperties: false
+ 
+   metavariable-name:
+@@ -1191,6 +1502,8 @@
+         metadata:
+           title: Arbitrary structured data for your own reference
+           type: object
++        imports:
++          $ref: "#/$defs/import-model"
+         options:
+           title: Options object to enable/disable certain matching features in semgrep-core
+           type: object

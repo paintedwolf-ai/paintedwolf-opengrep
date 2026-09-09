@@ -1,0 +1,761 @@
+--- a/src/engine/Match_taint_spec.ml
++++ b/src/engine/Match_taint_spec.ml
+@@ -75,6 +75,7 @@
+   sources : (RM.t * R.taint_source) list;
+   propagators : propagator_match list;
+   sanitizers : (RM.t * R.taint_sanitizer) list;
++  call_sinks : (RM.t * R.taint_sink) list;
+   sinks : (RM.t * R.taint_sink) list;
+ }
+ 
+@@ -136,6 +137,24 @@
+     (spec.sinks |> snd
+     |> List_.map (fun (sink : R.taint_sink) -> (sink.sink_formula, sink)))
+ [@@trace_trace]
++
++let rec without_focus (formula : R.formula) =
++  let f = match formula.f with
++    | R.P _ as leaf -> leaf
++    | R.And (tok, children) -> R.And (tok, List.map without_focus children)
++    | R.Or (tok, children) -> R.Or (tok, List.map without_focus children)
++    | R.Not (tok, child) -> R.Not (tok, without_focus child)
++    | R.Inside (tok, child) -> R.Inside (tok, without_focus child)
++    | R.Anywhere (tok, child) -> R.Anywhere (tok, without_focus child) in
++  {formula with f; focus = []}
++
++let find_call_sinks_ranges formula_cache xconf xtarget rule (spec : R.taint_spec) =
++  let modeled = match spec.sanitizers with
++    | Some (_, sanitizers) -> List.exists (fun sanitizer -> Option.is_some sanitizer.R.sanitizer_predicate) sanitizers
++    | None -> false in
++  if not modeled then []
++  else find_range_w_metas formula_cache xconf xtarget rule
++    (spec.sinks |> snd |> List.map (fun sink -> (without_focus sink.R.sink_formula, sink))) |> fst
+ 
+ let find_sanitizers_matches formula_cache (xconf : Match_env.xconfig)
+     (xtarget : Xtarget.t) (rule : R.t) (specs : R.taint_sanitizer list) :
+@@ -245,6 +264,7 @@
+   let (sinks_ranges : (RM.t * R.taint_sink) list), expls_sinks =
+     find_sinks_ranges formula_cache xconf xtarget rule spec
+   in
++  let call_sinks_ranges = find_call_sinks_ranges formula_cache xconf xtarget rule spec in
+   let sanitizers_ranges, expls_sanitizers =
+     match spec.sanitizers with
+     | None -> ([], [])
+@@ -322,6 +342,7 @@
+       sources = sources_ranges;
+       propagators = propagators_ranges;
+       sanitizers = sanitizers_ranges;
++      call_sinks = call_sinks_ranges;
+       sinks = sinks_ranges;
+     },
+     expls )
+@@ -422,6 +443,10 @@
+             (fun any ->
+               any_is_in_matches_OSS rule matches.sanitizers any
+                 ~get_id:(fun (ts : R.taint_sanitizer) -> ts.sanitizer_id));
++          is_call_sink =
++            (fun any ->
++              any_is_in_matches_OSS rule matches.call_sinks any
++                ~get_id:(fun (ts : R.taint_sink) -> ts.sink_id));
+           is_sink =
+             (fun any ->
+               any_is_in_matches_OSS rule matches.sinks any
+--- a/src/engine/Match_taint_spec.mli
++++ b/src/engine/Match_taint_spec.mli
+@@ -16,6 +16,7 @@
+       (** Ranges matched by `pattern-propagators:` *)
+   sanitizers : (Range_with_metavars.t * Rule.taint_sanitizer) list;
+       (** Ranges matched by `pattern-sanitizers:` *)
++  call_sinks : (Range_with_metavars.t * Rule.taint_sink) list;
+   sinks : (Range_with_metavars.t * Rule.taint_sink) list;
+       (** Ranges matched by `pattern-sinks:` *)
+ }
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -199,11 +199,14 @@
+       sink_exact;
+       sink_requires;
+       sink_requires_model_type;
++      sink_preserves_arguments;
+       sink_value_path;
+       sink_at_exit;
+       sink_has_focus = _;
+     } : [> `O of (string * Yaml.value) list ] =
+   let (`O sink_f) = translate_formula sink_formula in
++  let preservation = if List.is_empty sink_preserves_arguments then [] else
++    [("preserves-arguments", `A (List.map (fun index -> `Float (float_of_int index)) sink_preserves_arguments))] in
+   let exact_obj = if sink_exact then [] else [ ("exact", `Bool false) ] in
+   let at_exit_obj = if sink_at_exit then [ ("at-exit", `Bool true) ] else [] in
+   let requires_obj =
+@@ -216,13 +219,14 @@
+     | [] -> []
+     | path -> [ ("value-path", `A (List_.map (function ValueIndex i -> `Float (float_of_int i) | ValueField field -> `String field) path)) ]
+   in
+-  `O (List_.flatten [ sink_f; value_path_obj; exact_obj; requires_obj; at_exit_obj; translate_model_constraint sink_requires_model_type ])
++  `O (List_.flatten [ sink_f; preservation; value_path_obj; exact_obj; requires_obj; at_exit_obj; translate_model_constraint sink_requires_model_type ])
+ 
+ and translate_taint_sanitizer
+     {
+       sanitizer_id = _;
+       sanitizer_formula;
+       sanitizer_exact;
++      sanitizer_predicate;
+       sanitizer_output_type;
+       sanitizer_requires_type;
+       sanitizer_requires_model_type;
+@@ -237,11 +241,17 @@
+   let not_conflicting_obj =
+     if not_conflicting then [ ("not-conflicting", `Bool true) ] else []
+   in
++  let predicate = match sanitizer_predicate with
++    | None -> []
++    | Some (Rule.StringEquals (input, literal)) ->
++        [("predicate", `O [("type", `String "string-equals"); ("input", `String input); ("literal", `String literal)])]
++    | Some (Rule.BooleanNot input) ->
++        [("predicate", `O [("type", `String "boolean-not"); ("input", `String input)])] in
+   let type_name = function Rule.StringOrNull -> "string-or-null" | Rule.PosixShellWord -> "posix-shell-word" in
+   let output = match sanitizer_output_type with None -> [] | Some kind -> [("output-value-type", `String (type_name kind))] in
+   let requires = match sanitizer_requires_type with None -> [] | Some (variable, kind) ->
+     [("requires-value-type", `O [("metavariable", `String variable); ("type", `String (type_name kind))])] in
+-  `O (List_.flatten [ san_f; exact_obj; side_effect_obj; not_conflicting_obj; output; requires; translate_model_constraint sanitizer_requires_model_type ])
++  `O (List_.flatten [ san_f; exact_obj; side_effect_obj; not_conflicting_obj; predicate; output; requires; translate_model_constraint sanitizer_requires_model_type ])
+ 
+ and translate_taint_propagator
+     {
+--- a/src/parsing/Parse_rule.ml
++++ b/src/parsing/Parse_rule.ml
+@@ -479,6 +479,20 @@
+   let/ dict = parse_dict env key value in
+   parse_from_dict dict f
+ 
++let parse_taint_predicate env key value =
++  let/ fields = parse_dict env key value in
++  let/ kind = take_key fields env parse_string "type" in
++  let/ input = take_key fields env parse_string "input" in
++  let/ literal = take_opt fields env parse_string "literal" in
++  let/ () = check_that_dict_is_empty fields in
++  if not (Mvar.is_metavar_name input) then
++    error_at_key env.id key "predicate input must be a metavariable"
++  else match kind, literal with
++  | "string-equals", Some literal when Mvar.is_metavar_name literal && not (String.equal input literal) ->
++      Ok (Rule.StringEquals (input, literal))
++  | "boolean-not", None -> Ok (Rule.BooleanNot input)
++  | _ -> error_at_key env.id key "predicate must declare string-equals with distinct input and literal metavariables, or boolean-not with only input"
++
+ let parse_taint_sanitizer ~(is_old : bool) env (key : key) (value : G.expr) =
+   let sanitizer_id = "sanitizer:" ^ String.concat ":" env.path in
+   let parse_from_dict dict f =
+@@ -487,6 +501,7 @@
+       take_opt dict env parse_bool "exact"
+       |> Result.map (Option.value ~default:false)
+     in
++    let/ sanitizer_predicate = take_opt dict env parse_taint_predicate "predicate" in
+     let/ sanitizer_output_type = take_opt dict env parse_taint_value_type "output-value-type" in
+     let/ sanitizer_requires_model_type = take_opt dict env parse_model_constraint "requires-model-type" in
+     let/ sanitizer_requires_type = take_opt dict env (fun env key value ->
+@@ -509,12 +524,19 @@
+       |> Result.map (Option.value ~default:false)
+     in
+     let/ sanitizer_formula = f env dict in
++    let/ () = if Option.is_some sanitizer_predicate &&
++      (not sanitizer_exact || sanitizer_by_side_effect || not_conflicting
++       || Option.is_some sanitizer_output_type || Option.is_some sanitizer_requires_type || Option.is_some sanitizer_requires_model_type
++       || Rule.is_formula_with_focus sanitizer_formula) then
++      error_at_key env.id key "predicate models require exact, unfocused call semantics without other sanitizer effects"
++      else Ok () in
+     Ok
+       Rule.
+         {
+           sanitizer_id;
+           sanitizer_formula;
+           sanitizer_exact;
++          sanitizer_predicate;
+           sanitizer_output_type;
+           sanitizer_requires_type;
+           sanitizer_requires_model_type;
+@@ -536,6 +558,7 @@
+             sanitizer_id;
+             sanitizer_formula;
+             sanitizer_exact = false;
++            sanitizer_predicate = None;
+             sanitizer_output_type = None;
+             sanitizer_requires_type = None;
+             sanitizer_requires_model_type = None;
+@@ -563,6 +586,17 @@
+     error_at_key env.id key "value-path requires between 1 and 16 components"
+   else Ok path
+ 
++let parse_preserved_arguments env key value =
++  let index env expression = match expression.G.e with
++    | G.L (Int (Some number, _)) when Int64.compare number 0L >= 0 && Int64.compare number 31L <= 0 -> Ok (Int64.to_int number)
++    | G.L (Float (Some number, _)) when number >= 0. && number <= 31. && Float.is_integer number -> Ok (int_of_float number)
++    | _ -> error_at_key env.id key "preserved arguments must be integer positions from 0 through 31" in
++  let/ indices = parse_listi env key index value in
++  if List.is_empty indices || List.length indices > 32
++     || not (Int.equal (List.length indices) (List.length (List.sort_uniq Int.compare indices))) then
++    error_at_key env.id key "preserved arguments must be a nonempty unique list of at most 32 positions"
++  else Ok indices
++
+ let parse_taint_sink ~(is_old : bool) env (key : key) (value : G.expr) :
+     (Rule.taint_sink, Rule_error.t) result =
+   let sink_id = "sink:" ^ String.concat ":" env.path in
+@@ -577,12 +611,18 @@
+       take_opt dict env parse_bool "exact"
+       |> Result.map (Option.value ~default:true)
+     in
++    let/ sink_preserves_arguments = take_opt dict env parse_preserved_arguments "preserves-arguments"
++      |> Result.map (Option.value ~default:[]) in
+     let/ sink_value_path =
+       take_opt dict env parse_sink_value_path "value-path"
+       |> Result.map (Option.value ~default:[])
+     in
+     let/ sink_formula = f env dict in
+     let sink_has_focus = Rule.is_formula_with_focus sink_formula in
++    let/ () = if not (List.is_empty sink_preserves_arguments) &&
++      (not sink_exact || sink_at_exit) then
++      error_at_key env.id key "argument preservation requires an exact call sink without at-exit"
++      else Ok () in
+     let/ () =
+       if not (List.is_empty sink_value_path)
+          && (not sink_has_focus || not sink_exact || sink_at_exit) then
+@@ -597,6 +637,7 @@
+           sink_exact;
+           sink_requires;
+           sink_requires_model_type;
++          sink_preserves_arguments;
+           sink_value_path;
+           sink_at_exit;
+           sink_has_focus;
+@@ -620,6 +661,7 @@
+               sink_exact = true;
+               sink_requires = None;
+               sink_requires_model_type = None;
++              sink_preserves_arguments = [];
+               sink_value_path = [];
+               sink_at_exit = false;
+               sink_has_focus;
+--- a/src/parsing/Parse_rule_formula.ml
++++ b/src/parsing/Parse_rule_formula.ml
+@@ -946,10 +946,18 @@
+   (* TODO: first token, or principal token? *)
+   let parse_where_pair env (where_value : G.expr) =
+     let/ dict = parse_dict env where_key where_value in
+-    match find_constraint dict with
+-    | Some (tok, indicator) ->
+-        produce_constraint env where_key dict tok indicator
+-    | _ -> error_at_expr env.id value "Wrong where constraint fields"
++    if List.exists (fun key -> Hashtbl.mem dict.h key)
++         [ "module"; "modules"; "kind"; "symbol"; "imports" ] then
++      let/ constraint_ = parse_extra env ("metavariable-name", snd where_key) where_value in
++      match constraint_ with
++      | MetavarName (mvar, kind, modules, symbol, imports) ->
++          Ok [ Left (snd where_key, R.CondName { mvar; kind; modules; symbol; imports }) ]
++      | _ -> error_at_expr env.id where_value "Expected a callable name constraint"
++    else
++      match find_constraint dict with
++      | Some (tok, indicator) ->
++          produce_constraint env where_key dict tok indicator
++      | _ -> error_at_expr env.id value "Wrong where constraint fields"
+   in
+   (* TODO *)
+   let/ conditions, focus =
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -281,6 +281,8 @@
+  * think we should replace not-conflicting sanitizers with some `options:`,
+  * because they are a bit confusing to use sometimes.
+  *)
++and taint_predicate = StringEquals of Mvar.t * Mvar.t | BooleanNot of Mvar.t
++
+ and taint_sanitizer = {
+   sanitizer_id : string;
+   sanitizer_formula : formula;
+@@ -290,6 +292,7 @@
+       * and `sink(tainted)` is fine. If 'true', only the entire expression
+       * `sanitize(sink(tainted))` will be considered sanitized, and `sink(tainted)`
+       * will be reported. *)
++  sanitizer_predicate : taint_predicate option;
+   sanitizer_output_type : taint_value_type option;
+   sanitizer_requires_type : (string * taint_value_type) option;
+   sanitizer_requires_model_type : (string * string * string option) option;
+@@ -327,6 +330,7 @@
+        * The sink will only trigger a finding if the data that reaches it
+        * has a set of labels attached that satisfies the 'requires'.
+        *)
++  sink_preserves_arguments : int list;
+   sink_value_path : taint_value_path_component list;
+       (** Field names and array indices selecting the consumed sink value. *)
+   sink_at_exit : bool;
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -272,7 +272,8 @@
+ let any_is_best_sanitizer env any =
+   env.taint_inst.preds.is_sanitizer any
+   |> List.filter (fun (m : R.taint_sanitizer TM.t) ->
+-         Option.is_none m.spec.sanitizer_output_type
++         Option.is_none m.spec.sanitizer_predicate
++         && Option.is_none m.spec.sanitizer_output_type
+          && sanitizer_type_holds env m
+          && ((not m.spec.sanitizer_exact)
+             || TM.is_best_match env.func.best_matches m))
+@@ -310,6 +311,7 @@
+ 
+ let orig_is_sanitizer (taint_inst : Taint_rule_inst.t) orig =
+   taint_inst.preds.is_sanitizer (any_of_orig orig)
++  |> List.filter (fun (m : R.taint_sanitizer TM.t) -> Option.is_none m.spec.sanitizer_predicate)
+ 
+ let orig_is_best_sanitizer env orig =
+   any_is_best_sanitizer env (any_of_orig orig)
+@@ -2870,7 +2872,7 @@
+       in
+       (all_args_taints, Bot, lval_env)
+ 
+-let check_tainted_instr env instr : Taints.t * S.shape * Lval_env.t =
++let check_tainted_instr ~predicate_boolean env instr : Taints.t * S.shape * Lval_env.t =
+   let check_expr env = check_tainted_expr env in
+   let check_instr = function
+     | Assign (lval, e) ->
+@@ -3142,6 +3144,9 @@
+       (Taints.empty, Bot, env.lval_env)
+   | [] ->
+       let taints_instr, rhs_shape, lval_env = check_instr instr.i in
++      let taints_instr, rhs_shape = if predicate_boolean then
++        (drop_taints_if_bool_or_number env.taint_inst.options taints_instr Type.(Builtin Bool), S.Bot)
++        else (taints_instr, rhs_shape) in
+       let source_matches =
+         orig_is_best_source { env with lval_env } instr.iorig
+       in
+@@ -3667,6 +3672,83 @@
+   if fallthrough flow.exit then join_return_shape shapes (Some S.Bot)
+   else shapes
+ 
++type modeled_predicate = Proved_input of IL.lval | Boolean_negation of IL.exp | Boolean_value
++
++let call_predicate env instruction =
++  let expression bindings variable =
++    Option.bind (List.assoc_opt variable bindings) (fun value ->
++      match Metavariable.mvalue_to_any value with G.E value -> Some value | _ -> None) in
++  let string_literal = function
++    | Some {G.e = G.L (G.String _); _}
++    | Some {G.e = G.N (G.Id (_, {id_svalue = {contents = Some (G.Lit (G.String _))}; _})); _} -> true
++    | _ -> false in
++  let actual_input generic arguments =
++    let input_range = AST_generic_helpers.range_of_any_opt (G.E generic) in
++    match any_of_orig instruction.iorig with
++    | G.E {e = G.Call (_, (_, source_args, _)); _} when Int.equal (List.length source_args) (List.length arguments) ->
++        List.combine source_args arguments |> List.find_map (fun (source, actual) ->
++          match source, actual with
++          | G.Arg source, IL.Unnamed actual
++            when Option.is_some input_range && input_range =*= AST_generic_helpers.range_of_any_opt (G.E source) -> Some actual
++          | _ -> None)
++    | _ -> None in
++  match instruction.IL.i with
++  | Call (Some _, _, arguments) ->
++      env.taint_inst.preds.is_sanitizer (any_of_orig instruction.iorig)
++      |> List.filter_map (fun (matched : R.taint_sanitizer TM.t) ->
++           if not (Range.equal matched.range (Core_match.range matched.spec_pm)) then None
++           else match matched.spec.sanitizer_predicate with
++           | Some (R.StringEquals (input, literal)) ->
++               (match expression matched.spec_pm.env input, expression matched.spec_pm.env literal with
++                | Some input, literal when string_literal literal ->
++                    Some (Option.fold ~none:Boolean_value ~some:(fun input -> Proved_input input)
++                      (Taint_model_types.lval_of_expression input))
++                | _ -> Some Boolean_value)
++           | Some (R.BooleanNot input) ->
++               Option.bind (expression matched.spec_pm.env input) (fun input ->
++                 match actual_input input arguments with
++                 | Some actual -> Some (Boolean_negation actual)
++                 | None -> Option.map (fun input -> Boolean_negation IL.{e = Fetch input; eorig = NoOrig})
++                     (Taint_model_types.lval_of_expression input))
++           | None -> None)
++      |> (fun models -> match List.find_opt (function Boolean_value -> false | _ -> true) models with
++          | Some proof -> Some proof
++          | None -> if List.is_empty models then None else Some Boolean_value)
++  | _ -> None
++
++let preserved_predicate_arguments env instruction =
++  match instruction.IL.i with
++  | Call (_, _, arguments) ->
++      env.taint_inst.preds.is_call_sink (any_of_orig instruction.iorig)
++      |> List.concat_map (fun (matched : R.taint_sink TM.t) ->
++           if not (Range.equal matched.range (Core_match.range matched.spec_pm)) || not (Taint_model_types.constraint_holds ~report_unresolved:false env.taint_inst.lang env.lval_env
++               matched.spec_pm.env matched.spec.sink_requires_model_type) then []
++           else List.filter_map (fun index -> match List.nth_opt arguments index with
++             | Some (Unnamed {e = Fetch value; _}) -> Some value
++             | _ -> None) matched.spec.sink_preserves_arguments)
++  | _ -> []
++
++let prepare_predicate_instruction env instruction predicate preserved =
++  let unknown_call = match instruction.IL.i with Call _ -> Option.is_none predicate | _ -> false in
++  let consumes_at_sink = env.taint_inst.preds.is_call_sink (any_of_orig instruction.iorig)
++    |> List.exists (fun (matched : R.taint_sink TM.t) -> Range.equal matched.range (Core_match.range matched.spec_pm)) in
++  let current = if unknown_call && not consumes_at_sink then Lval_env.preserve_predicates env.taint_inst.lang preserved env.lval_env else env.lval_env in
++  let current = match LV.lval_of_instr_opt instruction with
++    | Some value -> Lval_env.invalidate_predicate_write env.taint_inst.lang current value
++    | None -> current in
++  ({env with lval_env = current}, unknown_call)
++
++let finish_predicate_instruction lang ~before instruction predicate ~unknown_call ~preserved current =
++  let current = if unknown_call then Lval_env.preserve_predicates lang preserved current else current in
++  match instruction.IL.i, predicate with
++  | Call (Some result, _, _), Some (Proved_input input) ->
++      Lval_env.establish_string_predicate lang result input current
++  | Call (Some result, _, _), Some (Boolean_negation input) ->
++      let expression = IL.{e = Operator ((G.Not, G.sc), [Unnamed input]); eorig = NoOrig} in
++      Lval_env.assign_predicate lang ~before result expression current
++  | Assign (result, expression), _ -> Lval_env.assign_predicate lang ~before result expression current
++  | _ -> current
++
+ let rec transfer : env -> fun_cfg:F.fun_cfg -> Lval_env.t D.transfn =
+  fun enter_env ~fun_cfg
+      (* the transfer function to update the mapping at node index ni *)
+@@ -3693,7 +3775,18 @@
+         record_effects env (effects_of_tainted_return env taints shape tok);
+         lval_env
+     | NInstr x ->
+-        let taints, shape, lval_env' = check_tainted_instr env x in
++        let predicate = call_predicate env x in
++        let preserved_arguments = preserved_predicate_arguments env x in
++        let env, unknown_predicate_call = prepare_predicate_instruction env x predicate preserved_arguments in
++        let taints, shape, lval_env' = check_tainted_instr ~predicate_boolean:(Option.is_some predicate) env x in
++        let taints, shape = if Option.is_some predicate then
++          (drop_taints_if_bool_or_number env.taint_inst.options taints Type.(Builtin Bool), S.Bot)
++          else (taints, shape) in
++        let lval_env' =
++          if Option.is_some predicate && env.taint_inst.options.taint_assume_safe_booleans then
++            Option.fold ~none:lval_env'
++              ~some:(Lval_env.clean env.taint_inst.lang lval_env') (LV.lval_of_instr_opt x)
++          else lval_env' in
+         let lval_env' =
+           if Lang.is_js env.taint_inst.lang then
+             let preserved =
+@@ -3816,6 +3909,8 @@
+          * it is dropped at stamp time: the IL is non-SSA, so a later read of
+          * this name may observe a different value than a guard established
+          * earlier on the path assumed. *)
++        let out_lval_env = finish_predicate_instruction env.taint_inst.lang ~before:in' x predicate
++          ~unknown_call:unknown_predicate_call ~preserved:preserved_arguments out_lval_env in
+         let out_lval_env = Lval_env.transfer_call_values env.taint_inst.lang ~before:in' x out_lval_env in
+         (match opt_lval with
+         | Some { IL.base = IL.Var name; _ } ->
+@@ -3836,6 +3931,7 @@
+         let pruned =
+           prune_branch_if_unreachable env.taint_inst.lang cond true in'
+           |> fun env' -> refine_string_guard env.taint_inst.lang env' true cond
++          |> Lval_env.refine_predicate env.taint_inst.lang true cond
+         in
+         recognised_guards env ~negated:false fun_cfg.params cond
+         |> List.fold_left
+@@ -3848,6 +3944,7 @@
+         let pruned =
+           prune_branch_if_unreachable env.taint_inst.lang cond false in'
+           |> fun env' -> refine_string_guard env.taint_inst.lang env' false cond
++          |> Lval_env.refine_predicate env.taint_inst.lang false cond
+         in
+         recognised_guards env ~negated:true fun_cfg.params cond
+         |> List.fold_left
+--- a/src/tainting/Taint_input_env.ml
++++ b/src/tainting/Taint_input_env.ml
+@@ -47,6 +47,7 @@
+          spec.sanitizer_exact && Taint_spec_match.is_exact matched
+          && not spec.sanitizer_by_side_effect
+          && Option.is_none spec.sanitizer_output_type
++         && Option.is_none spec.sanitizer_predicate
+          && Option.is_none spec.sanitizer_requires_type
+          && Option.is_none spec.sanitizer_requires_model_type
+          && (not spec.not_conflicting || List.is_empty sources))
+--- a/src/tainting/Taint_lval_env.ml
++++ b/src/tainting/Taint_lval_env.ml
+@@ -33,8 +33,58 @@
+ type taints_to_propagate = T.taints VarMap.t
+ type pending_propagation_dests = IL.lval VarMap.t
+ 
++type predicate_fact = {
++  input_lval : IL.lval;
++  input_path : Taint_aliases.path;
++  prior_value : cell;
++}
++
++let equal_predicate left right =
++  Taint_aliases.equal_path left.input_path right.input_path
++  && equal_cell_with_guards left.prior_value right.prior_value
++
++type predicate_result = {
++  when_true : predicate_fact list;
++  when_false : predicate_fact list;
++  can_true : bool;
++  can_false : bool;
++}
++
++let no_predicate = {when_true = []; when_false = []; can_true = true; can_false = true}
++let same_predicate_input left right = Taint_aliases.equal_path left.input_path right.input_path
++let add_predicate facts fact =
++  let same, other = List.partition (same_predicate_input fact) facts in
++  let fact = List.fold_left (fun fact prior ->
++    {fact with prior_value = Shape.join_cell fact.prior_value prior.prior_value}) fact same in
++  if List.length other >= 64 then facts else fact :: other
++let union_predicates left right = List.fold_left add_predicate left right
++let common_predicates left right = List.filter_map (fun fact ->
++  Option.map (fun other -> {fact with prior_value = Shape.join_cell fact.prior_value other.prior_value})
++    (List.find_opt (same_predicate_input fact) right)) left
++let equal_predicates left right =
++  Int.equal (List.length left) (List.length right)
++  && List.for_all (fun fact -> List.exists (equal_predicate fact) right) left
++let equal_predicate_result left right =
++  Bool.equal left.can_true right.can_true && Bool.equal left.can_false right.can_false
++  && equal_predicates left.when_true right.when_true && equal_predicates left.when_false right.when_false
++let join_predicate_result left right =
++  let facts left_possible left right_possible right =
++    if not left_possible then right else if not right_possible then left else common_predicates left right in
++  {when_true = facts left.can_true left.when_true right.can_true right.when_true;
++   when_false = facts left.can_false left.when_false right.can_false right.when_false;
++   can_true = left.can_true || right.can_true; can_false = left.can_false || right.can_false}
++let filter_predicate_result keep result =
++  {result with when_true = List.filter keep result.when_true; when_false = List.filter keep result.when_false}
++
++let restore_predicate tainted fact =
++  let Cell (taints, shape) = fact.prior_value in
++  NameMap.update (fst fact.input_path)
++    (Shape.update_offset_and_unify (Xtaint.to_taints taints) shape (snd fact.input_path)) tainted
++
+ type t = {
+   aliases : Taint_aliases.t;
++  predicate_results : predicate_result NameMap.t;
++  predicate_active : predicate_fact list;
+   call_values : Taint_call_values.t;
+   tainted : cell NameMap.t;
+       (** Lvalues that are tainted, it is only meant to track l-values of the
+@@ -108,6 +158,8 @@
+   {
+     tainted = NameMap.empty;
+     aliases = Taint_aliases.empty;
++    predicate_results = NameMap.empty;
++    predicate_active = [];
+     call_values = Taint_call_values.empty;
+     control = Taints.empty;
+     taints_to_propagate = VarMap.empty;
+@@ -130,6 +182,11 @@
+   | true, false -> le2
+   | false, true -> le1
+   | false, false ->
++      let shared = List.filter (fun fact -> List.exists (equal_predicate fact) le2.predicate_active) le1.predicate_active in
++      let restore_unshared env =
++        List.fold_left (fun tainted fact ->
++          if List.exists (equal_predicate fact) shared then tainted else restore_predicate tainted fact)
++          env.tainted env.predicate_active in
+       let tainted =
+         NameMap.merge
+           (fun _ left right ->
+@@ -138,11 +195,16 @@
+             | Some cell, None | None, Some cell ->
+                 Some (Shape.join_cell cell (Cell (`None, Bot)))
+             | None, None -> None)
+-          le1.tainted le2.tainted
++          (restore_unshared le1) (restore_unshared le2)
+       in
+       {
+         tainted;
+         aliases = Taint_aliases.join le1.aliases le2.aliases;
++        predicate_active = shared;
++        predicate_results = NameMap.merge (fun _ left right ->
++          let result = join_predicate_result (Option.value ~default:no_predicate left)
++                  (Option.value ~default:no_predicate right) in
++          if equal_predicate_result result no_predicate then None else Some result) le1.predicate_results le2.predicate_results;
+         call_values = Taint_call_values.join le1.call_values le2.call_values;
+         control = Taints.union le1.control le2.control;
+         taints_to_propagate =
+@@ -434,6 +496,9 @@
+     lval_env with
+     tainted;
+     aliases = Taint_aliases.filter pred lval_env.aliases;
++    predicate_results = NameMap.filter (fun name _ -> pred name) lval_env.predicate_results
++      |> NameMap.map (filter_predicate_result (fun fact -> pred (fst fact.input_path)));
++    predicate_active = List.filter (fun fact -> pred (fst fact.input_path)) lval_env.predicate_active;
+     call_values = Taint_call_values.filter (fun name _ -> pred name) lval_env.call_values;
+   }
+ 
+@@ -485,6 +550,8 @@
+     {
+       tainted = tainted1;
+       aliases = aliases1;
++      predicate_results = predicates1;
++      predicate_active = active1;
+       call_values = values1;
+       control = control1;
+       taints_to_propagate = _;
+@@ -497,6 +564,8 @@
+     {
+       tainted = tainted2;
+       aliases = aliases2;
++      predicate_results = predicates2;
++      predicate_active = active2;
+       call_values = values2;
+       control = control2;
+       taints_to_propagate = _;
+@@ -514,6 +583,9 @@
+    * wider guard would have kept). *)
+   && NameMap.equal equal_cell_with_guards tainted1 tainted2
+   && Taint_aliases.equal aliases1 aliases2
++  && NameMap.equal equal_predicate_result predicates1 predicates2
++  && Int.equal (List.length active1) (List.length active2)
++  && List.for_all (fun fact -> List.exists (equal_predicate fact) active2) active1
+   && Taint_call_values.equal values1 values2
+   (* NOTE: We ignore 'taints_to_propagate' and 'pending_propagation_dests',
+    * we just care how they affect 'tainted'. *)
+@@ -586,3 +658,132 @@
+            let target = IL.{ base = Var name; rev_offset = [] } in
+            add_lval_shape lang target (Xtaint.to_taints taints) shape env)
+          env
++
++let preserve_predicates lang preserved env =
++  let paths, aliases = List.filter_map (normalize_lval lang) preserved
++    |> List.fold_left (fun (paths, aliases) path ->
++         let related, aliases = Taint_aliases.related ~certain:true aliases path in
++         (related @ paths, aliases)) ([], env.aliases) in
++  let keep fact = List.exists (Taint_aliases.equal_path fact.input_path) paths in
++  let stale, live = List.partition (fun fact -> not (keep fact)) env.predicate_active in
++  { env with aliases; tainted = List.fold_left restore_predicate env.tainted stale;
++             predicate_results = NameMap.empty;
++             predicate_active = live }
++
++let clear_predicates env =
++  { env with tainted = List.fold_left restore_predicate env.tainted env.predicate_active;
++             predicate_results = NameMap.empty; predicate_active = [] }
++
++let invalidate_predicate_write lang env target =
++  match normalize_lval lang target with
++  | None -> clear_predicates env
++  | Some (written, offsets) ->
++      let targets, aliases = if List.is_empty offsets then ([(written, offsets)], env.aliases)
++        else Taint_aliases.related ~certain:false env.aliases (written, offsets) in
++      let rec overlap left right = match left, right with
++        | [], _ | _, [] -> true
++        | a :: left, b :: right -> (a =*= T.Oany || b =*= T.Oany || Int.equal (Shape_and_sig.Field.compare a b) 0) && overlap left right in
++      let touches fact = List.exists (fun (base, offsets) ->
++        IL.equal_name base (fst fact.input_path) && overlap offsets (snd fact.input_path)) targets in
++      let env = {env with aliases} in
++      let stale, live = List.partition touches env.predicate_active in
++      { env with tainted = List.fold_left restore_predicate env.tainted stale;
++                 predicate_active = live;
++                 predicate_results = NameMap.remove written env.predicate_results
++                   |> NameMap.map (filter_predicate_result (fun fact -> not (touches fact))) }
++
++let rec predicate_of_expression env expression =
++  match expression.IL.e with
++  | Fetch {base = Var name; rev_offset = []} -> NameMap.find_opt name env.predicate_results
++  | Operator ((AST_generic.Not, _), [Unnamed value]) ->
++      Option.map (fun result ->
++        {when_true = result.when_false; when_false = result.when_true;
++         can_true = result.can_false; can_false = result.can_true}) (predicate_of_expression env value)
++  | Literal (AST_generic.Bool (truth, _)) ->
++      Some {no_predicate with can_true = truth; can_false = not truth}
++  | _ -> None
++
++let assign_predicate lang ~before target expression env =
++  let env = match target.IL.base, target.rev_offset with
++  | Var name, [] when not (NameMap.is_empty before.predicate_results && List.is_empty before.predicate_active) ->
++      let result = Option.value ~default:no_predicate (predicate_of_expression before expression) in
++      let result = {result with when_true = union_predicates result.when_true before.predicate_active;
++                                when_false = union_predicates result.when_false before.predicate_active} in
++      if equal_predicate_result result no_predicate then
++        {env with predicate_results = NameMap.remove name env.predicate_results}
++      else if NameMap.cardinal env.predicate_results < 64 || NameMap.mem name env.predicate_results then
++        {env with predicate_results = NameMap.add name result env.predicate_results}
++      else env
++  | _ -> env in
++  match target.IL.base, target.rev_offset, expression.IL.e with
++  | Var name, [], Fetch source ->
++      (match normalize_lval lang source with
++       | Some path ->
++           let sources, _ = Taint_aliases.related ~certain:true before.aliases path in
++           let rec suffix prefix offsets = match prefix, offsets with
++             | [], offsets -> Some offsets
++             | left :: prefix, right :: offsets when Int.equal (Shape_and_sig.Field.compare left right) 0 && not (left =*= T.Oany) -> suffix prefix offsets
++             | _ -> None in
++           let copies = List.filter_map (fun fact ->
++             List.find_map (fun (base, offsets) ->
++               if not (IL.equal_name base (fst fact.input_path)) then None
++               else Option.bind (suffix offsets (snd fact.input_path)) (fun offsets ->
++                 Option.map (fun rev_offset ->
++                   {fact with input_lval = IL.{base = Var name; rev_offset}; input_path = (name, offsets)})
++                   (T.rev_IL_offset_of_offset offsets))) sources) before.predicate_active in
++           List.fold_left (fun env fact ->
++             if List.exists (equal_predicate fact) env.predicate_active then env
++             else if List.length env.predicate_active < 64 then
++               {env with predicate_active = fact :: env.predicate_active}
++             else {env with tainted = restore_predicate env.tainted fact})
++             env copies
++       | None -> env)
++  | _ -> env
++
++let establish_string_predicate lang result input env =
++  match result.IL.base, result.rev_offset, normalize_lval lang input with
++  | Var name, [], Some ((_, offsets) as path) when not (List.mem T.Oany offsets) ->
++      (match find_lval lang env input with
++       | Some prior_value when NameMap.cardinal env.predicate_results < 64 || NameMap.mem name env.predicate_results ->
++           let fact = { input_lval = input; input_path = path; prior_value } in
++           let result = {no_predicate with when_true = add_predicate env.predicate_active fact;
++                                           when_false = env.predicate_active} in
++           {env with predicate_results = NameMap.add name result env.predicate_results}
++       | _ -> env)
++  | _ -> env
++
++let rec constrain_predicate_condition env truth expression =
++  match expression.IL.e with
++  | Fetch {base = Var name; rev_offset = []} ->
++      let aliases, _ = Taint_aliases.related ~certain:true env.aliases (name, []) in
++      let results = List.fold_left (fun results (name, offsets) ->
++        if not (List.is_empty offsets) then results else
++        NameMap.update name (Option.map (fun result ->
++          {result with can_true = truth; can_false = not truth})) results)
++        env.predicate_results aliases in
++      {env with predicate_results = results}
++  | Operator ((AST_generic.Not, _), [Unnamed value]) ->
++      constrain_predicate_condition env (not truth) value
++  | _ -> env
++
++let refine_predicate lang truth expression env =
++  match predicate_of_expression env expression with
++  | Some result ->
++      let feasible = if truth then result.can_true else result.can_false in
++      if not feasible then mark_dead env
++      else
++        let env = constrain_predicate_condition env truth expression in
++        let facts = if truth then result.when_true else result.when_false in
++        List.fold_left (fun env fact ->
++          let targets, aliases = Taint_aliases.related ~certain:true env.aliases fact.input_path in
++          let snapshots = List.filter_map (fun ((name, offsets) as path) ->
++            Option.bind (T.rev_IL_offset_of_offset offsets) (fun rev_offset ->
++              let input_lval = IL.{base = Var name; rev_offset} in
++              Option.map (fun prior_value -> {input_lval; input_path = path; prior_value})
++                (find_lval lang env input_lval))) targets in
++          let active = union_predicates env.predicate_active snapshots in
++          if List.for_all (fun fact -> List.exists (same_predicate_input fact) active) snapshots then
++            let env = clean lang {env with aliases} fact.input_lval in
++            {env with predicate_active = active}
++          else env) env facts
++  | None -> env
+--- a/src/tainting/Taint_lval_env.mli
++++ b/src/tainting/Taint_lval_env.mli
+@@ -202,3 +202,11 @@
+ (** Add binding taints and shapes from an assumption environment to the current
+     scope. This combines facts that hold together; it does not join alternative
+     executions or import the assumptions' control, alias, or lifetime state. *)
++
++val clear_predicates : env -> env
++val invalidate_predicate_write : Lang.t -> env -> IL.lval -> env
++val assign_predicate : Lang.t -> before:env -> IL.lval -> IL.exp -> env -> env
++val establish_string_predicate : Lang.t -> IL.lval -> IL.lval -> env -> env
++val refine_predicate : Lang.t -> bool -> IL.exp -> env -> env
++
++val preserve_predicates : Lang.t -> IL.lval list -> env -> env
+--- a/src/tainting/Taint_rule_inst.ml
++++ b/src/tainting/Taint_rule_inst.ml
+@@ -74,6 +74,7 @@
+     AST_generic.any -> Rule.taint_sanitizer Taint_spec_match.t list;
+       (** Test whether 'any' is a sanitizer, this corresponds to
+       * 'pattern-sanitizers:' in taint-mode. *)
++  is_call_sink : AST_generic.any -> Rule.taint_sink Taint_spec_match.t list;
+   is_sink : AST_generic.any -> Rule.taint_sink Taint_spec_match.t list;
+       (** Test whether 'any' is a sink, this corresponds to 'pattern-sinks:'
+       * in taint-mode. *)

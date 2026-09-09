@@ -1,0 +1,17 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "callback_array_limit",
+    "line": 10
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "callback_array_limit",
+    "line": 12
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "object_alias_limit",
+    "line": 9
+  }
+]

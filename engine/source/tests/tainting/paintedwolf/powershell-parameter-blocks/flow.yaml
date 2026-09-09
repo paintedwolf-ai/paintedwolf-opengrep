@@ -1,0 +1,15 @@
+rules:
+- id: flow
+  languages: [powershell]
+  severity: ERROR
+  message: Network input reaches evaluation
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: Invoke-RestMethod ...
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: Invoke-Expression $VALUE
+    - focus-metavariable: $VALUE

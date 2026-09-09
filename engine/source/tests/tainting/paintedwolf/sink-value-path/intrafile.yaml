@@ -1,0 +1,16 @@
+rules:
+- id: flow
+  languages: [python]
+  severity: ERROR
+  message: Query text reaches a sink
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: 'source()'
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: 'sink($VALUE)'
+    - focus-metavariable: $VALUE
+    value-path: [0]

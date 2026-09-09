@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true,
+          "value-type": "string-or-null"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink(...)",
+          "exact": true
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "pattern": "clean($X)",
+          "exact": true,
+          "requires-value-type": {
+            "metavariable": "$X",
+            "type": "string-or-null"
+          }
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

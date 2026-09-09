@@ -1,0 +1,1 @@
+{"rules": [{"id": "closure-context", "languages": ["python"], "message": "Callable alternatives", "severity": "ERROR", "mode": "taint", "options": {"taint_intrafile": true, "guarded_taint_signatures": true, "taint_assume_safe_functions": false}, "pattern-sources": [{"pattern": "source()"}], "pattern-sinks": [{"pattern": "sink(...)"}]}]}

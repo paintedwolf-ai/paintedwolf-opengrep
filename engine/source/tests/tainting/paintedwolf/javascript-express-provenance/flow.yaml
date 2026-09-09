@@ -1,0 +1,33 @@
+rules:
+- id: express-flow
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Registered HTTP input reaches evaluation
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-inside: import $EXPRESS from "express"; ...
+    - pattern: $EXPRESS()
+    - metavariable-name:
+        metavariable: $EXPRESS
+        module: express
+    exact: true
+    label: HTTP_APP
+  - pattern-either:
+    - pattern: $REQ.query
+    - pattern: $REQ.body
+    - pattern: $REQ.params
+    exact: true
+    requires: HTTP_REQUEST
+    label: HTTP_VALUE
+  pattern-propagators:
+  - pattern: $APP.get(..., ($REQ, $RES) => { ... }, ...)
+    from: $APP
+    to: $REQ
+    requires: HTTP_APP
+    label: HTTP_REQUEST
+  pattern-sinks:
+  - patterns:
+    - pattern: eval($CODE)
+    - focus-metavariable: $CODE
+    requires: HTTP_VALUE

@@ -1,0 +1,52 @@
+diff --git a/src/analyzing/Eval_il_partial.ml b/src/analyzing/Eval_il_partial.ml
+--- a/src/analyzing/Eval_il_partial.ml
++++ b/src/analyzing/Eval_il_partial.ml
+@@ -397,6 +397,23 @@
+    * itself on the rare shared-DAG cond. *)
+   eval_memo (IL_helpers.PhysExpTbl.create 8) env exp
+ 
++let bool_of_svalue env = function
++  | G.Lit (G.Bool (value, _)) -> Some value
++  | G.Lit (G.Int (Some value, _)) when Lang.equal env.lang Lang.Perl ->
++      Some (not (Int64.equal value 0L))
++  | G.Lit (G.Float (Some value, _)) when Lang.equal env.lang Lang.Perl ->
++      Some (not (Float.equal value 0.))
++  | G.Lit (G.String (_, (value, _), _)) when Lang.equal env.lang Lang.Perl ->
++      Some (value <> "" && value <> "0")
++  | G.Lit (G.Null _) when Lang.equal env.lang Lang.Perl -> Some false
++  | _ -> None
++
++let rec eval_bool env (exp : IL.exp) =
++  match exp.e with
++  | IL.Operator ((G.Not, _), [IL.Unnamed value]) ->
++      Option.map not (eval_bool env value)
++  | _ -> bool_of_svalue env (eval env exp)
++
+ let eval_concat (env : env) args =
+   match List_.map (eval env) args with
+   | [] -> G.Lit (literal_of_string "")
+diff --git a/src/analyzing/Eval_il_partial.mli b/src/analyzing/Eval_il_partial.mli
+--- a/src/analyzing/Eval_il_partial.mli
++++ b/src/analyzing/Eval_il_partial.mli
+@@ -2,6 +2,7 @@
+ 
+ val mk_env : Lang.t -> AST_generic.svalue Dataflow_var_env.t -> env
+ val eval : env -> IL.exp -> AST_generic.svalue
++val eval_bool : env -> IL.exp -> bool option
+ 
+ (* internals used also in Dataflow_svalue.ml *)
+ val eval_concat : env -> IL.exp list -> AST_generic.svalue
+diff --git a/src/tainting/Dataflow_tainting.ml b/src/tainting/Dataflow_tainting.ml
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -3496,8 +3496,8 @@
+ let prune_branch_if_unreachable (lang : Lang.t) (cond : IL.exp)
+     (branch_direction : bool) (in' : Lval_env.t) : Lval_env.t =
+   let eval_env = Eval_il_partial.mk_env lang Var_env.VarMap.empty in
+-  match Eval_il_partial.eval eval_env cond with
+-  | G.Lit (G.Bool (b, _)) when not (Bool.equal b branch_direction) ->
++  match Eval_il_partial.eval_bool eval_env cond with
++  | Some b when not (Bool.equal b branch_direction) ->
+       Lval_env.mark_dead in'
+   | _ -> in'
+ 

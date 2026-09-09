@@ -1,0 +1,89 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "python"
+      ],
+      "severity": "ERROR",
+      "message": "Callback scalar guard",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": false
+      },
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "register($HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          },
+          "value-type": "string-or-null"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "register($HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          },
+          "value-type": "posix-shell-word",
+          "label": "OTHER"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "register($HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          },
+          "value-type": "string-or-null",
+          "label": "REPEATED"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

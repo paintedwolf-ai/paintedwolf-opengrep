@@ -1,0 +1,336 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true,
+          "model-type": "rust.primitive.str"
+        },
+        {
+          "pattern": "owned()",
+          "exact": true,
+          "model-type": "rust.std.String"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "u8"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "u16"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "u32"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "u64"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "u128"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "usize"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "i8"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "i16"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "i32"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "i64"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "i128"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "isize"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "f32"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$TEXT.parse::<$NUMBER>()"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NUMBER",
+                "module": "core.primitive",
+                "symbol": [
+                  "f64"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "rust.primitive.str"
+          }
+        }
+      ],
+      "options": {
+        "taint_intrafile": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -242,6 +242,8 @@
+ let pms_of_effect ~lang ~match_on (effect_ : Effect.t) =
+   match effect_ with
+   | ToLval _
++  | ToThrowUnknown _
++  | ToThrow _
+   | ToReturn _
+   | ToSinkInCall _ ->
+       []
+@@ -431,7 +433,7 @@
+                     spec_matches.propagators))
+         in
+         let deferred_functions = ref IL.NameSet.empty in
+-        if model_values then
++        if model_values || (Lang.equal lang Lang.Python && taint_inst.options.taint_intrafile) then
+           Visit_function_defs.visit
+             (fun entity definition ->
+               match (fst definition.G.fkind, entity) with
+@@ -445,7 +447,7 @@
+             ast;
+         let deferred_functions = !deferred_functions in
+         let module_cfg =
+-          if model_values then
++          if model_values || (Lang.equal lang Lang.Python && taint_inst.options.taint_intrafile) then
+             let declarations = if Lang.equal lang Lang.Swift then swift_operator_declarations ast else [] in
+             let statements = AST_to_IL.stmt lang (G.stmt1 (declarations @ ast)) in
+             let cfg, lambdas = CFG_build.cfg_of_stmts statements in
+@@ -454,12 +456,15 @@
+         in
+         let glob_env, lambda_bodies =
+           match module_cfg with
++          | Some body when not model_values ->
++              (glob_env, Dataflow_tainting.available_lambdas body)
+           | Some body ->
+               let _, mapping =
+-                Dataflow_tainting.fixpoint taint_inst ~in_env:import_env
+-                  ~deferred_functions ?builtin_signature_db body
++                Taint_model_types.without_call_limit_diagnostics (fun () ->
++                  Dataflow_tainting.fixpoint taint_inst ~in_env:import_env
++                    ~deferred_functions ?builtin_signature_db body)
+               in
+-              ( mapping.(body.cfg.exit).Dataflow_core.out_env,
++              ( Taint_completion.normal_env body.cfg mapping,
+                 Dataflow_tainting.available_lambdas body )
+           | None -> (glob_env, IL.NameMap.empty)
+         in
+@@ -662,9 +667,28 @@
+                     m "TAINT_TOPO: [%d] %s" i (Function_id.show node)))
+               analysis_order;
+ 
++            let standalone_roots = Taint_function_entries.root_functions call_graph in
++            let escaped_bindings = Taint_function_entries.escaped_bindings ast in
++
+             let run_check_fundef_if_needed (info : fun_info)
+                 (updated_db : Shape_and_sig.signature_database) :
+                 Shape_and_sig.signature_database =
++              let declared_input =
++                Fold_IL_params.fold
++                  (fun found id _ _ ->
++                    found || not (List.is_empty (taint_inst.preds.is_source (G.Tk (snd id)))))
++                  false info.cfg.params
++              in
++              let contextual_only =
++                not declared_input
++                && ((info.is_lambda_assignment && Lang.is_js lang)
++                    || ((Lang.is_js lang || Lang.equal lang Lang.Python)
++                        && G.equal_function_kind (fst info.fdef.G.fkind) G.Function
++                        && not (Taint_function_entries.standalone
++                          ~roots:standalone_roots ~escaped:escaped_bindings info.name)))
++              in
++              if contextual_only then updated_db
++              else (
+               let _flow, fdef_effects, _mapping =
+                 check_fundef taint_inst info.name ~glob_env ~lambda_bodies
+                   ?class_name:info.class_name_str ~signature_db:updated_db
+@@ -706,13 +730,13 @@
+                 else fdef_effects
+               in
+               record_matches effects_to_record;
+-              updated_db
++              updated_db)
+             in
+ 
+           let process_fun_info info db =
+             let params = Tok.unbracket info.fdef.fparams in
+             let arity = get_arity params info lang in
+-            let updated_db, _signature =
++            let updated_db, signature =
+               Taint_signature_extractor.extract_signature_with_file_context
+                 ~in_env:glob_env ~lambda_bodies
+                 ~arity:(Shape_and_sig.Arity_exact arity) ~db
+@@ -720,6 +744,9 @@
+                 ~method_properties:info.method_properties
+                 ~call_graph:(Some relevant_graph) info.cfg ast
+             in
++            let updated_db = Taint_signature_fixpoint.replace_signature
++              (Function_id.of_il_name info.name)
++              Shape_and_sig.{sig_ = signature; arity = Arity_exact arity} updated_db in
+             (* For Kotlin, if the last parameter is a lambda (function type),
+              * also extract signature with arity-1 to handle trailing lambda syntax:
+              * f(a, b) vs f(a) { b } *)
+@@ -732,7 +759,7 @@
+                   | _ -> false
+                 in
+                 if last_param_is_lambda then
+-                  let db', _ =
++                  let db', signature =
+                     Taint_signature_extractor
+                     .extract_signature_with_file_context
+                       ~in_env:glob_env ~lambda_bodies
+@@ -742,38 +769,39 @@
+                       ~method_properties:info.method_properties
+                       ~call_graph:(Some relevant_graph) info.cfg ast
+                   in
+-                  db'
++                  Taint_signature_fixpoint.replace_signature
++                    (Function_id.of_il_name info.name)
++                    Shape_and_sig.{sig_ = signature; arity = Arity_exact (arity - 1)} db'
+                 else updated_db
+               else updated_db
+             in
+-            run_check_fundef_if_needed info updated_db
++            updated_db
+           in
+ 
++            let step node db =
++              match Shape_and_sig.FunctionMap.find_opt node info_map with
++              | None -> db
++              | Some info -> process_fun_info info db in
++            let seed node db =
++              match Shape_and_sig.FunctionMap.find_opt node info_map with
++              | None -> db
++              | Some info ->
++                  let arity = get_arity (Tok.unbracket info.fdef.fparams) info lang in
++                  let signature = Shape_and_sig.Signature.{
++                    params = of_IL_params info.cfg.params;
++                    params_il = info.cfg.params;
++                    effects = Effects.empty;
++                    closures = IL.NameSet.empty;
++                  } in
++                  Taint_signature_fixpoint.replace_signature node
++                    Shape_and_sig.{sig_ = signature; arity = Arity_exact arity} db in
+             let signature_db_after_order =
+-              List.fold_left
+-                (fun db node ->
+-                  Log.debug (fun m ->
+-                      m "TAINT_SIGBUILD: Processing %s" (Function_id.show node));
+-                  match Shape_and_sig.FunctionMap.find_opt node info_map with
+-                  | None ->
+-                      Log.debug (fun m ->
+-                          m "TAINT_SIGBUILD: fn_id NOT FOUND in info_map!");
+-                      db
+-                  | Some info ->
+-                      Log.debug (fun m ->
+-                          m
+-                            "TAINT_SIGBUILD: fn_id found in info_map, \
+-                             processing...");
+-                      let new_db = process_fun_info info db in
+-                      Log.debug (fun m ->
+-                          m
+-                            "TAINT_SIGBUILD: After processing, db.signatures \
+-                             size=%d"
+-                            (Shape_and_sig.FunctionMap.cardinal
+-                               new_db.Shape_and_sig.signatures));
+-                      new_db)
+-                initial_signature_db analysis_order
+-            in
++              Taint_model_types.without_call_limit_diagnostics (fun () ->
++                Taint_signature_fixpoint.run ~graph:relevant_graph ~seed ~step initial_signature_db) in
++            List.iter (fun node ->
++              Option.iter (fun info ->
++                ignore (run_check_fundef_if_needed info signature_db_after_order))
++                (Shape_and_sig.FunctionMap.find_opt node info_map)) analysis_order;
+ 
+             (* Skip the "remaining functions" phase entirely - if a function isn't
+              in the relevant subgraph, we don't need to analyze it *)
+@@ -914,8 +942,11 @@
+     Core_profiling.rule_profiling Core_result.match_result list =
+   AST_to_IL.reset_translation_gaps ();
+   Taint_aliases.reset_diagnostics ();
++  Taint_shape.reset_diagnostics ();
+   Taint_callback_models.reset_diagnostics ();
+   Taint_model_types.reset_diagnostics ();
++  Taint_signature_fixpoint.reset_diagnostics ();
++  Taint_exceptions.reset_diagnostics ();
+   (* Check for language support warnings when taint_intrafile is enabled *)
+   (Dataflow_tainting.reset_constructor ();
+    (* Clear the per-domain guard-cond intern table: rules run on a domain in
+@@ -1059,7 +1090,10 @@
+         (fun location -> ("object_alias_limit", location))
+         (Taint_aliases.take_diagnostics ())
+     @ Taint_callback_models.take_diagnostics ()
++    @ Taint_shape.take_diagnostics ()
+     @ Taint_model_types.take_diagnostics ()
++    @ Taint_signature_fixpoint.take_diagnostics ()
++    @ Taint_exceptions.take_diagnostics ()
+   in
+   let _, frontend_diagnostics = lazy_force xtarget.Xtarget.lazy_ast_and_errors in
+   let already_reported location =

@@ -1,0 +1,16 @@
+rules:
+- id: flow
+  languages: [clojure]
+  severity: ERROR
+  message: Selected root receives input
+  mode: taint
+  pattern-sources:
+  - pattern: (source)
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: (sink $VALUE)
+    - focus-metavariable: $VALUE
+    value-path: [:root]
+  options:
+    taint_intrafile: true

@@ -1,0 +1,10 @@
+rules:
+- id: unknown-write
+  languages: [javascript]
+  message: Unknown field writes are weak updates
+  severity: ERROR
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+  pattern-sinks:
+  - pattern: sink(...)

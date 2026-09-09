@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "perl-ellipsis-pattern",
+      "languages": [
+        "perl"
+      ],
+      "message": "Match Perl call arguments with a pattern ellipsis",
+      "severity": "ERROR",
+      "pattern": "sink(...)"
+    }
+  ]
+}

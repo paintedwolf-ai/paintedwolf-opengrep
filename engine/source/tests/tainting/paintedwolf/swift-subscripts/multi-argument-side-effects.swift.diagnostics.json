@@ -1,0 +1,7 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "unsupported_ast_to_il:SubscriptArguments",
+    "line": 3
+  }
+]

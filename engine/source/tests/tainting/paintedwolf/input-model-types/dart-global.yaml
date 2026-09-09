@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "dart"
+      ],
+      "message": "A modeled global reaches its typed sink",
+      "severity": "ERROR",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": false
+      },
+      "pattern-sources": [
+        {
+          "pattern": "new Model(...)",
+          "exact": true,
+          "model-type": "example.Model"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "example.Model"
+          }
+        }
+      ]
+    }
+  ]
+}

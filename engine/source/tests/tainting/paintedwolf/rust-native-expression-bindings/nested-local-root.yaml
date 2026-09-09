@@ -1,0 +1,130 @@
+{
+  "rules": [
+    {
+      "id": "native-api",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "Native API",
+      "pattern-either": [
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "std.process.Command",
+                "symbol": [
+                  "new"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "std.process",
+                "symbol": [
+                  "Command",
+                  "new"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "std",
+                "symbol": [
+                  "process",
+                  "Command",
+                  "new"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "std.fs",
+                "symbol": [
+                  "canonicalize"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "std",
+                "symbol": [
+                  "fs",
+                  "canonicalize"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "core.mem",
+                "symbol": [
+                  "zeroed"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$F(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$F",
+                "module": "alloc.string.String",
+                "symbol": [
+                  "new"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

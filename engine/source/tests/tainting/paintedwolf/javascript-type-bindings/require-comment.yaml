@@ -1,0 +1,23 @@
+{
+  "rules": [
+    {
+      "id": "binding",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Direct require has binding provenance",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "$FACTORY(...)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$FACTORY",
+            "module": "trusted"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,450 @@
+--- a/languages/rust/generic/Parse_rust_tree_sitter.ml
++++ b/languages/rust/generic/Parse_rust_tree_sitter.ml
+@@ -3049,7 +3049,7 @@
+ and prepend_module_name (scope : G.dotted_ident) (modname : G.module_name) :
+     G.module_name =
+   match modname with
+-  | DottedName modname -> G.DottedName (modname @ scope)
++  | DottedName modname -> G.DottedName (scope @ modname)
+   | _ -> modname
+ 
+ and prepend_scope (dir : G.directive) (scope : G.dotted_ident option) :
+@@ -3547,7 +3547,18 @@
+       [ G.DefStmt (ent, G.ClassDef class_def) |> G.s ]
+   | `Use_decl (_v0TODO, v1, v2, v3) ->
+       let use = token env v1 (* "use" *) in
+-      let use_clauses = map_use_clause env v2 use in
++      let use_clauses =
++        map_use_clause env v2 use
++        |> List.map (fun directive ->
++            match directive.G.d with
++            | G.ImportFrom (token, G.DottedName [], [(name, alias)]) ->
++                let alias = match alias with
++                  | Some alias -> alias
++                  | None -> (name, G.empty_id_info ())
++                in
++                { directive with d = G.ImportAs (token, G.DottedName [name], Some alias) }
++            | _ -> directive)
++      in
+       let _semicolon = token env v3 (* ";" *) in
+       List_.map (fun x -> G.DirectiveStmt x |> G.s) use_clauses
+   | `Extern_crate_decl (_v0TODO, v1, v2, v3, v4, v5) ->
+--- a/languages/swift/generic/Parse_swift_tree_sitter.ml
++++ b/languages/swift/generic/Parse_swift_tree_sitter.ml
+@@ -712,6 +712,50 @@
+   in
+   let v3 = (* "}" *) token env v3 in
+   (v1, v2, v3)
++
++(* Prefix effects cover the postfix chain until an explicit parenthesized boundary. *)
++let rec postfix_prefix_count (expression : CST.expression) =
++  match expression with
++  | `Choice_simple_id (`Prim_exp primary) -> (
++      match primary with
++      | `Await_exp (_, operand) ->
++          1 + (match operand with
++              | `Exp expression -> postfix_prefix_count expression
++              | `Call_exp (callee, _) -> postfix_prefix_count callee
++              | `Tern_exp _ -> 0)
++      | `Try_exp (_, operand) ->
++          1 + (match operand with
++              | `Exp expression -> postfix_prefix_count expression
++              | `Call_exp (callee, _) -> postfix_prefix_count callee
++              | `Bin_exp _ | `Tern_exp _ -> 0)
++      | _ -> 0)
++  | `Choice_simple_id (`Un_exp (`Call_exp (callee, _))) ->
++      postfix_prefix_count callee
++  | `Choice_simple_id (`Un_exp (`Navi_exp (`Exp receiver, _))) ->
++      postfix_prefix_count receiver
++  | _ -> 0
++
++let rec apply_postfix count (head : G.expr) suffix =
++  if count = 0 then suffix head
++  else
++    match head.G.e with
++    | G.Await (token, expression) ->
++        G.Await (token, apply_postfix (count - 1) expression suffix) |> G.e
++    | G.OtherExpr (("Try", token), [ G.E expression ]) ->
++        G.OtherExpr
++          (("Try", token), [ G.E (apply_postfix (count - 1) expression suffix) ])
++        |> G.e
++    | _ -> suffix head
++
++let call_or_subscript ~subscript receiver ((left, arguments, right) as args) =
++  if not subscript then G.Call (receiver, args) |> G.e
++  else
++    match arguments with
++    | [ G.Arg index ] -> G.ArrayAccess (receiver, (left, index, right)) |> G.e
++    | _ ->
++        G.OtherExpr
++          (("SubscriptArguments", left), G.E receiver :: List_.map (fun arg -> G.Ar arg) arguments)
++        |> G.e
+ 
+ let rec map_annotated_inheritance_specifier (env : env)
+     ((v1, v2) : CST.annotated_inheritance_specifier) =
+@@ -1120,9 +1164,16 @@
+   v3
+ 
+ and map_call_expression (env : env) ((v1, v2) : CST.call_expression) : G.expr =
+-  let v1 = map_expression env v1 in
+-  let v2 = map_call_suffix env v2 in
+-  G.Call (v1, v2) |> G.e
++  let prefix_count = postfix_prefix_count v1 in
++  let callee = map_expression env v1 in
++  let arguments = map_call_suffix env v2 in
++  let subscript =
++    match v2 with
++    | `Value_args (`LBRACK_opt_value_arg_rep_COMMA_value_arg_RBRACK _) -> true
++    | _ -> false
++  in
++  apply_postfix prefix_count callee (fun value ->
++      call_or_subscript ~subscript value arguments)
+ 
+ and map_call_suffix (env : env) (v1 : CST.call_suffix) : G.arguments =
+   match v1 with
+@@ -1649,14 +1700,16 @@
+     ((v1, v2, v3, v4) : CST.import_declaration) =
+   let attrs = map_modifiers_opt env v1 in
+   let v2 = (* "import" *) token env v2 in
+-  let _v3TODO = Option.map (map_import_kind env) v3 in
+-  let v4 = map_identifier env v4 in
+-  (* TODO Use ImportFrom for `import foo.bar.baz`? *)
+-  G.DirectiveStmt
+-    {
+-      G.d = G.ImportAll (v2, G.DottedName v4, Tok.unsafe_fake_tok "");
+-      d_attrs = attrs;
+-    }
++  let kind = Option.map (map_import_kind env) v3 in
++  let path = map_identifier env v4 in
++  let directive =
++    match (kind, List.rev path) with
++    | Some _, symbol :: (_ :: _ as reversed_module) ->
++        G.ImportFrom
++          (v2, G.DottedName (List.rev reversed_module), [ (symbol, None) ])
++    | _ -> G.ImportAll (v2, G.DottedName path, Tok.unsafe_fake_tok "")
++  in
++  G.DirectiveStmt { G.d = directive; d_attrs = attrs }
+   |> G.s
+ 
+ and map_inheritance_specifier (env : env) (x : CST.inheritance_specifier) =
+@@ -1685,32 +1738,26 @@
+   v1 :: v2 |> List_.map (fun t -> (t, None))
+ 
+ and map_interpolation (env : env) ((v1, v2, v3) : CST.interpolation) =
+-  let _lp = (* "\\(" *) token env v1 in
+-  let v2 = map_interpolation_contents env v2 in
+-  let _rp = (* ")" *) token env v3 in
+-  v2
+-
+-and map_interpolation_contents (env : env)
++  let lp = token env v1 in
++  let rp = token env v3 in
++  map_interpolation_contents env (lp, rp) v2
++
++and map_interpolation_contents (env : env) (lp, rp)
+     ((v1, v2) : CST.interpolation_contents) : G.expr =
+-  let v1 = map_value_argument env v1 in
+-  let _v2TODO =
++  let first = map_value_argument env v1 in
++  let rest =
+     List.concat_map
+-      (fun (v1, v2) ->
+-        let _comma = (* "," *) token env v1 in
+-        map_value_argument env v2)
++      (fun (comma, value) ->
++        let _comma = token env comma in
++        map_value_argument env value)
+       v2
+   in
+-  (* The grammar allows for multiple arguments in an interpolation, but Swift
+-   * actually only allows one. So, ignore the rest.
+-   *
+-   * TODO should the grammar be updated to more closely match Swift here? *)
+-  match v1 with
+-  | [ G.Arg e ] -> e
+-  (* I (nmote) believe that the only other valid argument configuration would be
+-   * something like "\(_: 2)", which there is no real reason to use, and Swift
+-   * won't allow the others at all. *)
+-  | _ ->
+-      G.OtherExpr (("UnknownInterpolation", Tok.unsafe_fake_tok ""), []) |> G.e
++  match first @ rest with
++  | [ G.Arg expression ] -> expression
++  | arguments ->
++      G.Call
++        (G.IdSpecial (G.InterpolatedElement, lp) |> G.e, (lp, arguments, rp))
++      |> G.e
+ 
+ and map_arguments (env : env) ((v1, v2) : CST.interpolation_contents) :
+     G.argument list =
+@@ -1836,19 +1883,17 @@
+     (* Fake brackets here since the brackets delimit the lambda expression as a
+      * whole, not just the statements *)
+     (* TODO consider using `in` and the closing bracket as the delimiters *)
+-    (* We put it into the top-level statements so that we do not prevent the inner statements
+-       from surviving IL translation. It shouldn't mess anything up, because it shouldn't be
+-       translated.
+-       We need somewhere for the capture list to go, however, so we just put it first in the
+-       list of statements. It shouldn't survive to semantic analysis anyways.
+-    *)
+-    let capture_group_stmt =
+-      G.exprstmt
+-        (G.OtherExpr (("CaptureGroup", v1), List_.map (fun x -> G.Pa x) captures)
+-        |> G.e)
++    let stmts =
++      match captures with
++      | [] -> stmts
++      | _ ->
++          G.exprstmt
++            (G.OtherExpr
++               (("CaptureGroup", v1), List_.map (fun x -> G.Pa x) captures)
++            |> G.e)
++          :: stmts
+     in
+-    G.FBStmt
+-      (G.Block (Tok.unsafe_fake_bracket (capture_group_stmt :: stmts)) |> G.s)
++    G.FBStmt (G.Block (Tok.unsafe_fake_bracket stmts) |> G.s)
+   in
+   let _rb = (* "}" *) token env v4 in
+   let def =
+@@ -2201,7 +2246,12 @@
+ 
+ and map_navigation_expression (env : env) ((v1, v2) : CST.navigation_expression)
+     : G.expr =
+-  let v1 =
++  let prefix_count =
++    match v1 with
++    | `Exp expression -> postfix_prefix_count expression
++    | _ -> 0
++  in
++  let receiver =
+     match v1 with
+     | `Navi_type_exp x ->
+         (* This happens with constructs like `Dictionary<Int, Int>.thing`. This
+@@ -2217,7 +2267,7 @@
+         G.OtherExpr (("TypeExpr", Tok.unsafe_fake_tok ""), [ G.T type_ ]) |> G.e
+     | `Exp x -> map_expression env x
+   in
+-  match v2 with
++  let suffix receiver = match v2 with
+   | `Dot_choice_simple_id (s1, s2) ->
+       let s1 = (* dot_custom *) token env s1 in
+       let s2 =
+@@ -2225,10 +2275,13 @@
+         | `Simple_id x -> G.FN (map_simple_identifier env x |> H2.name_of_id)
+         | `Int_lit tok -> G.FDynamic (G.L (map_integer_literal env tok) |> G.e)
+       in
+-      G.DotAccess (v1, s1, s2) |> G.e
++      G.DotAccess (receiver, s1, s2) |> G.e
+   | `Dot_semg_ellips (s1, _) ->
+       let s1 = (* dot_custom *) token env s1 in
+-      G.DotAccessEllipsis (v1, s1) |> G.e
++      G.DotAccessEllipsis (receiver, s1) |> G.e
++
++  in
++  apply_postfix prefix_count receiver suffix
+ 
+ and map_tuple_pattern_item (env : env) (x : CST.tuple_pattern_item) : G.pattern
+     =
+@@ -2575,8 +2628,8 @@
+ and map_raw_str_interpolation (env : env)
+     ((v1, v2, v3) : CST.raw_str_interpolation) =
+   let l = (* pattern \\#*\( *) token env v1 in
+-  let xs = map_interpolation_contents env v2 in
+   let r = (* ")" *) token env v3 in
++  let xs = map_interpolation_contents env (l, r) v2 in
+   (l, xs, r)
+ 
+ and map_repeat_while_statement (env : env)
+@@ -2778,10 +2831,17 @@
+     (x : CST.expr_hack_at_ternary_binary_suffix) =
+   match x with
+   | `Exp x -> map_expression env x
+-  | `Expr_hack_at_tern_bin_call (v1, v2) ->
+-      let v1 = map_expression env v1 in
+-      let v2 = map_expr_hack_at_ternary_binary_call_suffix env v2 in
+-      G.Call (v1, v2) |> G.e
++  | `Expr_hack_at_tern_bin_call (callee, suffix) ->
++      let prefix_count = postfix_prefix_count callee in
++      let receiver = map_expression env callee in
++      let arguments = map_expr_hack_at_ternary_binary_call_suffix env suffix in
++      let subscript =
++        match suffix with
++        | `LBRACK_opt_value_arg_rep_COMMA_value_arg_RBRACK _ -> true
++        | _ -> false
++      in
++      apply_postfix prefix_count receiver (fun value ->
++          call_or_subscript ~subscript value arguments)
+ 
+ and map_expr_hack_at_ternary_binary_call_suffix (env : env)
+     (x : CST.expr_hack_at_ternary_binary_call_suffix) =
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -888,8 +888,31 @@
+  * forms) inside the pattern, see [pattern_binds_lvals]. The flag only
+  * scopes over the pattern, not the right-hand side. *)
+ and let_pattern_stmts env ~eorig pat e : stmt list =
+-  let ss_e, exp = expr { env with pattern_binds_lvals = false } e in
+-  ss_e @ pattern_assign_statements env ~eorig exp pat
++  let value_env = { env with pattern_binds_lvals = false } in
++  match (env.lang, pat, e.G.e) with
++  | Lang.Scheme, G.PatTuple (_, pats, _), G.Container (G.Tuple, (_, values, _))
++    when Int.equal (List.length pats) (List.length values)
++         && List.for_all (function G.PatId _ -> true | _ -> false) pats ->
++      scheme_parallel_bindings value_env ~eorig pats values
++  | _ ->
++      let ss_e, exp = expr value_env e in
++      ss_e @ pattern_assign_statements env ~eorig exp pat
++
++and scheme_parallel_bindings env ~eorig pats values =
++  let initialized =
++    List.map2
++      (fun pat value ->
++        let tok = match pat with G.PatId ((_, tok), _) -> tok | _ -> assert false in
++        let stmts, exp = expr env value in
++        let snapshot = fresh_lval tok in
++        let value_origin = SameAs value in
++        let store = mk_s (Instr (mk_i (Assign (snapshot, exp)) value_origin)) in
++        let frozen = mk_e (Fetch snapshot) value_origin in
++        (stmts @ [store], pattern_assign_statements env ~eorig frozen pat))
++      pats values
++  in
++  let initializers, bindings = List.split initialized in
++  List.concat initializers @ List.concat bindings
+ 
+ (*****************************************************************************)
+ (* Pattern-match cond extraction                                              *)
+@@ -1547,6 +1570,11 @@
+        * interpolated strings, but we do not have an use for it yet during
+        * semantic analysis, so in the IL we just unwrap the expression. *)
+       expr env e
++  | G.Call ({ e = G.IdSpecial (G.InterpolatedElement, tok); _ }, args) ->
++      let ss_args, args = arguments env (Tok.unbracket args) in
++      let call_ss, call_exp = call_instr tok eorig ~void (fun res ->
++          CallSpecial (res, (Concat, tok), args)) in
++      (ss_args @ call_ss, call_exp)
+   | G.New (tok, ty, _cons_id_info, args) ->
+       (* HACK: Fall-through case where we don't know to what variable the allocated
+        * object is being assigned to. See HACK(new), we expect to intercept `New`
+@@ -2718,6 +2746,9 @@
+             match x with
+             | G.E e1orig ->
+                 let ss, e = expr env e1orig in (ss, e)
++            | G.Ar (G.Arg e | G.ArgKwd (_, e) | G.ArgKwdOptional (_, e))
++              when env.lang =*= Lang.Swift && str = "SubscriptArguments" ->
++                expr env e
+             | __else__ -> ([], fixme_exp ToDo x (related_tok tok)))
+           xs
+       in
+--- a/src/engine/Match_search_mode.ml
++++ b/src/engine/Match_search_mode.ml
+@@ -768,10 +768,7 @@
+              in
+              match expression with
+              | Some e -> find_name env e cond |> map_bool r
+-             | None ->
+-                 error env
+-                   (spf "couldn't find metavar %s in the match results." mvar);
+-                 None)
++             | None -> None)
+          (* todo: would be nice to have CondRegexp also work on
+           * eval'ed bindings.
+           * We could also use re.match(), to be close to python, but really
+--- a/src/matching/Generic_vs_generic.ml
++++ b/src/matching/Generic_vs_generic.ml
+@@ -516,7 +516,7 @@
+   | G.Id ((str, tok), _info), G.IdQualified _ when Mvar.is_metavar_name str ->
+       envf (str, tok) (MV.N b)
+   (* equivalence: aliasing (name resolving) part 2 (mostly for OCaml) *)
+-  | ( G.IdQualified _a1,
++  | ( G.IdQualified a1,
+       B.IdQualified
+         ({
+            name_last = idb, _;
+@@ -541,6 +541,7 @@
+         (try_parents dotted
+         >||> try_alternate_names idb resolved
+         (* try without resolving anything *)
++        >||> m_name_info a1 nameinfo
+         >||> m_name a
+                (B.IdQualified { nameinfo with name_info = static_empty_id_info })
+         >||>
+@@ -685,7 +686,13 @@
+   match (a, b) with
+   | ( { G.name_last = a0; name_middle = a1; name_top = a2; name_info = a3 },
+       { B.name_last = b0; name_middle = b1; name_top = b2; name_info = b3 } ) ->
+-      let* () = m_ident_and_type_arguments a0 b0 in
++      let* () =
++        match b1 with
++        | None ->
++            let* () = m_ident_and_id_info (fst a0, a3) (fst b0, b3) in
++            m_option m_type_arguments (snd a0) (snd b0)
++        | Some _ -> m_ident_and_type_arguments a0 b0
++      in
+       let* () = (m_option m_qualifier) a1 b1 in
+       let* () = (m_option m_tok) a2 b2 in
+       let* () = m_id_info a3 b3 in
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -571,7 +571,7 @@
+     ~explicit vinit vtype =
+   let sid =
+     match (lang, !(id_info.id_resolved)) with
+-    | Lang.Dart, Some (Global, sid) -> sid
++    | (Lang.Dart | Lang.Swift), Some (Global, sid) -> sid
+     | Lang.Scheme, Some ((Global | LocalVar), sid) -> sid
+     | _ -> SId.mk ()
+   in
+@@ -962,6 +962,9 @@
+                   add_ident_imported_scope alias resolved env.names
+               | _ -> ())
+             imported_names
++      | ImportAll (_, DottedName [module_], _) when lang =*= Lang.Swift ->
++          let resolved = untyped_ent (ImportedModule [fst module_], SId.mk ()) in
++          add_ident_imported_scope module_ resolved env.names
+       | ImportAs (_, DottedName xs, Some (alias, id_info)) ->
+           (* for python *)
+           let sid = SId.mk () in
+@@ -1080,6 +1083,18 @@
+                 (* name resolution *)
+                 set_resolved env id_info resolved
+             | _ -> ())
++      | IdQualified
++          {
++            name_last = id, Some _;
++            name_middle = None;
++            name_info = id_info;
++            name_top = None;
++          }
++        when lang =*= Lang.Rust ->
++          (match lookup_scope_opt id env with
++          | Some resolved -> set_resolved env id_info resolved
++          | None -> ());
++          super#visit_name venv x
+       | IdQualified
+           {
+             name_last = id, None;
+@@ -1317,9 +1332,14 @@
+       (* | Block (_, stmts, _) when has_block_scope lang ->
+              with_new_block_scope env.names (fun () ->
+                  List.iter (fun stmt -> self#visit_stmt venv stmt) stmts) *)
+-      | Block (_, stmts, _) when List.mem lang [Lang.Lisp; Lang.Scheme; Lang.Ocaml; Lang.Cairo; Lang.Groovy; Lang.Perl] ->
++      | Block (_, stmts, _) when List.mem lang [Lang.Lisp; Lang.Scheme; Lang.Ocaml; Lang.Cairo; Lang.Groovy; Lang.Perl; Lang.Swift] ->
+           with_new_block_scope env.names (fun () ->
+               if lang =*= Lang.Scheme then List.iter (predeclare_scheme_stmt env) stmts;
++              if lang =*= Lang.Swift then List.iter (fun statement ->
++                match statement.s with
++                | DefStmt ({name = EN (Id (id, info)); _}, (ClassDef _ | TypeDef _)) ->
++                    declare_var env lang id info ~explicit:true None None
++                | _ -> ()) stmts;
+               List.iter (fun stmt -> self#visit_stmt venv stmt) stmts)
+       | _else_ -> super#visit_stmt venv x
+   end
+@@ -1336,7 +1356,7 @@
+ 
+ let resolve lang prog =
+   let env = default_env lang in
+-  if List.mem lang [Lang.Dart; Lang.Scheme] then predeclare_globals env lang prog;
++  if List.mem lang [Lang.Dart; Lang.Scheme; Lang.Swift] then predeclare_globals env lang prog;
+ 
+   (* coupling: we do similar things in Constant_propagation.ml so if you
+    * add a feature here, you might want to add a similar thing over there too.

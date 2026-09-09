@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "swift"
+      ],
+      "severity": "ERROR",
+      "message": "Subscript value flow",
+      "mode": "taint",
+      "options": {
+        "taint_assume_safe_indexes": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

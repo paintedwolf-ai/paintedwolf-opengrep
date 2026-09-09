@@ -1,0 +1,22 @@
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -3667,7 +3667,7 @@
+         let expression_env = lval_env' in
+         let lval_env', assigned_aliases =
+           match (env.taint_inst.lang, opt_lval) with
+-          | (Lang.Js | Lang.Ts), Some target ->
++          | (Lang.Js | Lang.Ts | Lang.Dart | Lang.Scheme), Some target ->
+               let source, source_suffix =
+                 match (x.i, shape) with
+                 | ( Assign (_, { e = Fetch source; _ }),
+@@ -3756,8 +3756,8 @@
+         in
+         let assigned_env =
+           match (env.taint_inst.lang, x.i) with
+-          | (Lang.Js | Lang.Ts), Assign (target, expression) ->
+-              Taint_js_references.assignment ~before:expression_env assigned_env
++          | (Lang.Js | Lang.Ts | Lang.Dart | Lang.Scheme), Assign (target, expression) ->
++              Taint_references.assignment ~before:expression_env env.taint_inst.lang assigned_env
+                 target expression
+           | _ -> assigned_env
+         in

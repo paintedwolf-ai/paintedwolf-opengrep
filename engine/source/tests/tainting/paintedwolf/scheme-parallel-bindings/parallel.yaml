@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {
+      "id": "constant",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Proven binding value reaches its call",
+      "patterns": [
+        {
+          "pattern": "(observe $VALUE)"
+        },
+        {
+          "metavariable-regex": {
+            "metavariable": "$VALUE",
+            "regex": "^fixed$",
+            "constant-propagation": true
+          }
+        }
+      ]
+    }
+  ]
+}

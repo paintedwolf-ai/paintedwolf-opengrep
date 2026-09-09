@@ -1,0 +1,61 @@
+[
+  {
+    "language": "groovy",
+    "filenames": [
+      "Jenkinsfile",
+      "build.gradle",
+      "handler.groovy",
+      "handler.gvy"
+    ],
+    "excluded": [
+      "OtherJenkinsfile",
+      "notes.txt"
+    ],
+    "source": "def value = source()\nsink(value)\n",
+    "source_pattern": "source()",
+    "sink_pattern": "sink($X)"
+  },
+  {
+    "language": "powershell",
+    "filenames": [
+      "handler.ps1",
+      "module.psm1",
+      "data.psd1"
+    ],
+    "excluded": [
+      "data.psd1.txt"
+    ],
+    "source": "$value = Read-Input\nInvoke-Expression $value\n",
+    "source_pattern": "Read-Input",
+    "sink_pattern": "Invoke-Expression $X"
+  },
+  {
+    "language": "perl",
+    "filenames": [
+      "handler.pl",
+      "configure.PL",
+      "module.pm",
+      "service.psgi",
+      "check.t",
+      "handler.plx",
+      "handler.perl",
+      "header.ph",
+      "auto.al",
+      "web.cgi",
+      "web.fcgi",
+      "cpanfile",
+      "Rexfile",
+      "ack",
+      "latexmkrc",
+      ".latexmkrc"
+    ],
+    "excluded": [
+      "otherack",
+      "othercpanfile",
+      "notes.txt"
+    ],
+    "source": "my $value = source();\nsink($value);\n",
+    "source_pattern": "source()",
+    "sink_pattern": "sink($X)"
+  }
+]

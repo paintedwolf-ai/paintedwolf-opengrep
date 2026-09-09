@@ -1,0 +1,22 @@
+[
+  {
+    "rule": "express-flow",
+    "line": 5,
+    "source": {
+      "line": 3,
+      "column": 21,
+      "end_line": 3,
+      "end_column": 24
+    }
+  },
+  {
+    "rule": "express-flow",
+    "line": 20,
+    "source": {
+      "line": 18,
+      "column": 16,
+      "end_line": 18,
+      "end_column": 19
+    }
+  }
+]

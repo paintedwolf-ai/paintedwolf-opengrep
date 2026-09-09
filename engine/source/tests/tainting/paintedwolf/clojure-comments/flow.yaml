@@ -1,0 +1,27 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "clojure"
+      ],
+      "mode": "taint",
+      "severity": "ERROR",
+      "message": "flow",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "(source)",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "(sink $X)"
+        }
+      ]
+    }
+  ]
+}

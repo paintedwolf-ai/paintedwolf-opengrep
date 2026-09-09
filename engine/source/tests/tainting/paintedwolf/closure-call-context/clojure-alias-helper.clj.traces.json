@@ -1,0 +1,18 @@
+[
+  {
+    "rule": "closure-context",
+    "line": 3,
+    "source": {
+      "line": 4,
+      "column": 11,
+      "end_line": 4,
+      "end_column": 18
+    },
+    "sink": {
+      "line": 3,
+      "column": 51,
+      "end_line": 3,
+      "end_column": 69
+    }
+  }
+]

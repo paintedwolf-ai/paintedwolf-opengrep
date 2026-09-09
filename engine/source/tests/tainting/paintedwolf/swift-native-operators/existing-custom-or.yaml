@@ -1,0 +1,1 @@
+{"rules": [{"id": "flow", "languages": ["swift"], "severity": "ERROR", "message": "Optional binding flow", "mode": "taint", "pattern-sources": [{"pattern-either": [{"pattern": "source()"}, {"pattern": "sourceFlag()"}], "exact": true}], "pattern-sinks": [{"pattern": "sink($X)"}], "options": {"taint_intrafile": true, "guarded_taint_signatures": true}}]}

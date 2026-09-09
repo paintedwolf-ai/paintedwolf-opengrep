@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "mode": "taint",
+      "message": "Tagged template preserves call arguments",
+      "severity": "ERROR",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

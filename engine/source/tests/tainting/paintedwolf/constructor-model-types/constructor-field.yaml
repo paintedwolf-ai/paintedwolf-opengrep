@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "typed-constructor",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Constructor field retains its declared model",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true,
+          "model-type": "example.Request"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "example.Request"
+          }
+        }
+      ]
+    }
+  ]
+}

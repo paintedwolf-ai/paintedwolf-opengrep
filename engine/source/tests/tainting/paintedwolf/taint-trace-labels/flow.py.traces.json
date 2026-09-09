@@ -1,0 +1,42 @@
+[
+  {
+    "rule": "conjunction",
+    "line": 4,
+    "source": {
+      "line": 2,
+      "column": 9,
+      "end_line": 2,
+      "end_column": 26
+    }
+  },
+  {
+    "rule": "disjunction",
+    "line": 6,
+    "source": {
+      "line": 2,
+      "column": 9,
+      "end_line": 2,
+      "end_column": 26
+    }
+  },
+  {
+    "rule": "negative",
+    "line": 8,
+    "source": {
+      "line": 1,
+      "column": 11,
+      "end_line": 1,
+      "end_column": 21
+    }
+  },
+  {
+    "rule": "nested",
+    "line": 10,
+    "source": {
+      "line": 2,
+      "column": 9,
+      "end_line": 2,
+      "end_column": 26
+    }
+  }
+]

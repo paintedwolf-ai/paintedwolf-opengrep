@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "native-diagnostic",
+      "languages": [
+        "groovy"
+      ],
+      "message": "Native diagnostic regression",
+      "severity": "ERROR",
+      "pattern": "sink(...)"
+    }
+  ]
+}

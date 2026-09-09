@@ -1,0 +1,833 @@
+--- a/grammar.js
++++ b/grammar.js
+@@ -25,37 +25,50 @@
+ const IDENTIFIER_REGEX = regexp_or([VARIABLE_REGEX, CONSTANT_REGEX])
+ const TYPE_REGEX =  /[A-Z][$_0-9a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00F8\u0100-\uFFFE]*/
+ 
+-const list_of = (e) => seq(
+-  repeat(prec.left(seq(e, ','))),
++const list_of = (e, nl) => seq(
++  repeat(prec.left(seq(e, ',', repeat(nl)))),
+   seq(e, optional(',')),
+ )
+ 
++const statements = ($) => seq(
++  repeat(choice($._newline, ';')),
++  optional(seq(
++    $._statement,
++    repeat(seq(repeat1(choice($._newline, ';')), $._statement)),
++    repeat(choice($._newline, ';')),
++  )),
++)
++
+ module.exports = grammar({
+   name: 'groovy',
+ 
+-  extras: $ => [/\s/, $.comment, $.groovy_doc],
++  extras: $ => [/[ \t\r\f]/, $.comment, $.groovy_doc],
+ 
+   word: $ => $.identifier,
+ 
+   conflicts: $ => [ //TODO: dynamic precedence, heuristics? eg capital letter
++    [$.closure],
++    [$.dotted_identifier, $._expression],
++    [$.dotted_identifier, $._callable_expression],
++    [$.argument_list],
++    [$.function_definition, $.function_declaration],
+     [$._callable_expression, $.juxt_function_call],
+-    [$._callable_expression, $._juxt_argument_list],
+-    [$._juxtable_expression, $._juxt_argument_list],
+   ],
+ 
+   rules: {
+     source_file: $ => seq(
+       optional($.shebang),
+-      repeat($._statement),
+-      optional($.pipeline)
+-    ),
+-
++      statements($)
++    ),
++
++    _newline: $ => /\n/,
++    semgrep_ellipsis: $ => token(prec(10, "...")),
+     shebang: $ => seq(
+       '#!', /[^\n]*/
+     ),
+ 
+-    _statement: $ => prec.left(PREC.STATEMENT, seq(
+-      optional($.label),
++    _statement: $ => prec.left(seq(
++      optional(seq($.label, repeat($._newline))),
+       choice(
+         $.assertion,
+         $.groovy_import,
+@@ -66,23 +79,21 @@
+         $.do_while_loop,
+         $.for_in_loop,
+         $.for_loop,
+-        $.function_call,
+         $.function_declaration,
+         $.function_definition,
+         $.if_statement,
+         $.juxt_function_call,
++        $.pipeline,
+         // $.pipeline_step_with_block,
+         $.return,
+         $.switch_statement,
+         $.try_statement,
+         $.while_loop,
+-        $.closure,
+         alias("break", $.break),
+         alias("continue", $.continue),
+         $._expression,
+         // $.step,
+       ),
+-      optional(';')
+     )),
+ 
+     label: $ => seq(field('name', $.identifier), ":"),
+@@ -95,7 +106,7 @@
+           ["?.", PREC.TOP],
+           ["*.", PREC.TOP],
+         ].map(([operator, precedence]) =>
+-          prec.left(precedence, seq($._expression, operator, $._expression))
++          prec.left(precedence, seq($._expression, operator, repeat($._newline), $._expression))
+         ),
+         ...[
+           ["*", PREC.TOP],
+@@ -106,9 +117,10 @@
+       ),
+ 
+     dotted_identifier: $ =>
+-      prec.left(1, seq(
++      prec.dynamic(1, prec.left(seq(
+         choice($._primary_expression, $._type_identifier),
+         repeat1(seq(
++        repeat($._newline),
+         '.',
+         choice(
+           $.identifier,
+@@ -116,7 +128,7 @@
+           $._type_identifier,
+           $.parenthesized_expression,
+         ))),
+-      )),
++      ))),
+ 
+     _import_name: $ => choice(
+       $.identifier,
+@@ -164,7 +176,7 @@
+     )),
+ 
+     binary_op: ($) =>
+-      choice(
++      prec.dynamic(2, choice(
+         ...[
+           ["%", PREC.STAR],
+           ["*", PREC.STAR],
+@@ -201,15 +213,15 @@
+           ["||", PREC.OR],
+           ["?:", PREC.ELVIS],
+         ].map(([operator, precedence]) =>
+-          prec.left(precedence, seq($._expression, operator, $._expression))
+-        ),
+-        prec.right(PREC.POW, seq($._expression, "**", $._expression))
+-      ),
++          prec.left(precedence, seq($._expression, operator, repeat($._newline), $._expression))
++        ),
++        prec.right(PREC.POW, seq($._expression, "**", repeat($._newline), $._expression))
++      )),
+ 
+     boolean_literal: $ => choice('true', 'false'),
+ 
+     class_definition: $ => seq(
+-      repeat($.annotation),
++      repeat(seq($.annotation, repeat($._newline))),
+       optional($.access_modifier),
+       repeat($.modifier),
+       choice('@interface', 'interface', 'class'),
+@@ -219,12 +231,13 @@
+         'extends',
+         field('superclass', $._primary_expression),
+       )),
++      repeat($._newline),
+       field('body', $.closure),
+     ),
+ 
+     generic_parameters: $ => seq(
+       '<',
+-      list_of($.generic_param),
++      list_of($.generic_param, $._newline),
+       '>'
+     ),
+ 
+@@ -238,10 +251,10 @@
+ 
+     closure: $ => seq(
+       '{',
++      repeat($._newline),
+       optional(choice('->', seq(alias($._param_list, $.parameter_list), '->'))),
+       // repeat(choice($._statement, $._expression)),
+-      repeat($._statement),
+-      optional($._expression),
++      statements($),
+       '}'
+     ),
+ 
+@@ -260,6 +273,7 @@
+         // ),
+         repeat(
+           choice(
++            $._newline,
+             // /[^*\s]*(\*[^/][^*\s]+)*/
+             $.groovy_doc_param,
+             $.groovy_doc_throws,
+@@ -288,7 +302,7 @@
+       /@[^@\s*]*/,
+ 
+     declaration: $ => seq(
+-      repeat($.annotation),
++      repeat(seq($.annotation, repeat($._newline))),
+       optional($.access_modifier),
+       choice(
+         seq(
+@@ -298,7 +312,7 @@
+             seq(
+               choice(field('type', $._type), 'def'),
+               field('name', $.identifier),
+-              optional(seq('=', field('value', $._expression)))
++              optional(seq('=', repeat($._newline), field('value', $._expression)))
+             ),
+           )
+         ),
+@@ -309,7 +323,7 @@
+             seq(
+               optional(choice(field('type', $._type), 'def')),
+               field('name', $.identifier),
+-              optional(seq('=', field('value', $._expression)))
++              optional(seq('=', repeat($._newline), field('value', $._expression)))
+             ),
+           )
+         ),
+@@ -319,11 +333,13 @@
+     parenthesized_expression: ($) =>
+       prec(PREC.PRIORITY, choice(
+         seq("(",
+-          choice($._expression, $._immediately_invoked_closure),
++          repeat($._newline),
++          $._expression,
++          repeat($._newline),
+           ")"),
+       )),
+ 
+-    _expression: $ => prec(1, choice(
++    _expression: $ => prec.dynamic(0, choice(
+       $._primary_expression,
+       $.increment_op,
+       $.binary_op,
+@@ -335,6 +351,7 @@
+     )),
+ 
+     _primary_expression: $ => prec.left(1, choice(
++      $.semgrep_ellipsis,
+       $.number_literal,
+       $.boolean_literal,
+       $.string,
+@@ -347,6 +364,7 @@
+       "this",
+       $.function_call,
+       $.parenthesized_expression,
++      $._immediately_invoked_closure,
+       $._juxtable_expression,
+       $._type_identifier,
+     ),
+@@ -359,10 +377,8 @@
+ 
+     do_while_loop: $ => seq(
+       'do',
+-      field('body', choice(
+-        $._statement,
+-        $.closure
+-      )),
++      repeat($._newline),
++      field('body', $._statement),
+       'while',
+       field('condition', $.parenthesized_expression),
+     ),
+@@ -385,10 +401,8 @@
+     for_loop: $ => seq(
+       'for',
+       $.for_parameters,
+-      field('body', choice(
+-        $._statement,
+-        $.closure
+-      )),
++      repeat($._newline),
++      field('body', $._statement),
+     ),
+ 
+     for_in_loop: $ => prec(1, seq(
+@@ -398,16 +412,14 @@
+       'in',
+       field('collection', $._expression),
+       ')',
+-      field('body', choice(
+-        $._statement,
+-        $.closure
+-      )),
+-    )),
+-
+-    function_call: $ => prec.left(2, seq( //higher precedence than juxt_function_call
++      repeat($._newline),
++      field('body', $._statement),
++    )),
++
++    function_call: $ => prec.dynamic(2, prec.left(PREC.STATEMENT + 1, seq( //higher precedence than juxt_function_call
+       field('function', $._callable_expression),
+       field('args', $.argument_list),
+-    )),
++    ))),
+ 
+     __immediately_invoked_closure: $ => prec.left(2,
+       seq(field('function', $.closure), field('args', $.argument_list))
+@@ -417,33 +429,35 @@
+       $.function_call,
+     ),
+ 
+-    argument_list: $ => prec.right(1, seq(
++    argument_list: $ => prec.dynamic(1, seq(
+       prec.left(seq(
+         '(',
++        repeat($._newline),
+         optional(
+-          list_of(choice($.map_item, $._expression)),
+-        ),
++          list_of(choice($.map_item, $._expression), $._newline),
++        ),
++        repeat($._newline),
+         ')'
+       )),
+-      optional($.closure),
+-    )),
+-
+-    _param_list: $ => prec(1, list_of($.parameter)),
++      optional(prec.dynamic(3, seq(repeat($._newline), $.closure))),
++    )),
++
++    _param_list: $ => prec(1, list_of($.parameter, $._newline)),
+ 
+     parameter_list: $ => prec(1, seq(
+       '(',
+-      optional(list_of($.parameter)),
++      optional(list_of($.parameter, $._newline)),
+       ')'
+     )),
+ 
+     parameter: $ => prec(-1, seq(
+       optional(field('type', choice($._type, 'def'))),
+       field('name', $.identifier),
+-      optional(seq('=', field('value', $._expression))),
++      optional(seq('=', repeat($._newline), field('value', $._expression))),
+     )),
+ 
+     function_declaration: $ => prec(2, seq(
+-      repeat($.annotation),
++      repeat(seq($.annotation, repeat($._newline))),
+       optional($.access_modifier),
+       repeat($.modifier),
+       field('type', choice($._type, 'def')),
+@@ -451,15 +465,16 @@
+       field('parameters', $.parameter_list),
+     )),
+ 
+-    function_definition: $ => prec(3, seq(
+-      repeat($.annotation),
++    function_definition: $ => prec.dynamic(1, prec(2, seq(
++      repeat(seq($.annotation, repeat($._newline))),
+       optional($.access_modifier),
+       repeat($.modifier),
+       field('type', choice($._type, 'def')),
+       field('function', choice($.identifier, $.quoted_identifier)),
+       field('parameters', $.parameter_list),
++      repeat($._newline),
+       field('body', $.closure), //TODO: optional return
+-    )),
++    ))),
+ 
+     identifier: $ => IDENTIFIER_REGEX,
+     _type_identifier: $ => alias(TYPE_REGEX, $.identifier),
+@@ -476,58 +491,44 @@
+     if_statement: $ => prec.left(seq(
+       'if',
+       field('condition', $.parenthesized_expression),
+-      field('body', choice(
+-        $._statement,
+-        $.closure,
+-      )),
++      repeat($._newline),
++      field('body', $._statement),
+       optional(
+-        seq('else', field('else_body', choice($._statement, $.closure)))
++        seq(optional(';'), repeat($._newline), 'else', repeat($._newline), field('else_body', $._statement))
+       )
+     )),
+ 
+-    index: $ => prec(PREC.TOP, seq(
++    index: $ => prec.dynamic(2, prec(PREC.STATEMENT + 1, seq(
+       $._primary_expression,
+       '[',
+-      $._expression,
++      repeat($._newline),
++      choice(
++        $._expression,
++        seq($.map_item, repeat(seq(',', repeat($._newline), $.map_item))),
++      ),
++      repeat($._newline),
+       ']',
+-    )),
+-
+-    juxt_function_call: $ => seq(
++    ))),
++
++    juxt_function_call: $ => prec.dynamic(1, seq(
+       field('function', $._juxtable_expression),
+       field('args', alias($._juxt_argument_list, $.argument_list)),
+-    ),
++    )),
+ 
+     _juxt_argument_list: $ => {
+-      const juxt_argument = choice(
+-        $.map_item,
+-        $.increment_op,
+-        $.binary_op,
+-        $.ternary_op,
+-        $.unary_op,
+-        $.access_op,
+-        $.closure,
+-        alias("null", $.null),
+-        $.number_literal,
+-        $.boolean_literal,
+-        $.string,
+-        $.list,
+-        $.map,
+-        "this",
+-        $.function_call,
+-        $.dotted_identifier,
+-        $.identifier,
+-        $.index,
+-      )
+-
+-      return prec.left(2,
+-        seq(juxt_argument, repeat(seq(',', juxt_argument)))
++      const juxt_argument = choice($.map_item, $._expression)
++
++      return prec.right(0,
++        seq(juxt_argument, repeat(seq(',', repeat($._newline), juxt_argument)))
+       )
+     },
+ 
+     list: $ => prec(1, seq(
+       '[',
+-      repeat(prec.left(seq($._expression, ','))),
++      repeat($._newline),
++      repeat(prec.left(seq($._expression, ',', repeat($._newline)))),
+       optional(seq($._expression, optional(','))),
++      repeat($._newline),
+       ']'
+     )),
+ 
+@@ -541,20 +542,24 @@
+         $.parenthesized_expression,
+       )),
+       ':',
++      repeat($._newline),
+       field('value', $._expression),
+     ),
+ 
+     map: $ => choice(
+       seq(
+         '[',
++        repeat($._newline),
+         repeat(
+           prec.left(seq(
+             $.map_item,
+             ',',
++            repeat($._newline),
+           ))
+         ),
+         $.map_item,
+         optional(','),
++        repeat($._newline),
+         ']',
+       ),
+       seq('[', ':', ']'),
+@@ -675,7 +680,9 @@
+       choice(
+         seq(
+           '{',
++          repeat($._newline),
+           $._expression,
++          repeat($._newline),
+           '}',
+         ),
+         alias(token.immediate(/[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*/), $.identifier),
+@@ -685,37 +692,38 @@
+     switch_statement: $ => seq(
+       'switch',
+       field('value', $.parenthesized_expression),
++      repeat($._newline),
+       field('body', $.switch_block),
+     ),
+ 
+     switch_block: $ => seq(
+       '{',
+-      repeat($.case),
++      repeat(choice($.case, $._newline)),
+       '}'
+     ),
+ 
+-    case: $ => seq(
++    case: $ => prec.right(seq(
+       choice(
+         seq('case', field('value', $._expression), ':'),
+         seq('default', ':'),
+       ),
+-      repeat($._statement)
+-    ),
++      repeat(choice($._statement, $._newline))
++    )),
+ 
+     ternary_op: $ => prec.right(seq(
+       field('condition', $._expression),
+       '?',
++      repeat($._newline),
+       field('then', $._expression),
+       ':',
++      repeat($._newline),
+       field('else', $._expression),
+     )),
+ 
+     try_statement: $ => prec.left(seq(
+       'try',
+-      field('body', choice(
+-        $._statement,
+-        $.closure,
+-      )),
++      repeat($._newline),
++      field('body', $._statement),
+       optional(
+         seq(
+           'catch',
+@@ -775,7 +783,7 @@
+     //TODO diamond operator
+     type_with_generics: $ => seq($._type, $.generics),
+ 
+-    generics: $ => seq('<', list_of($._type), '>'),
++    generics: $ => seq('<', list_of($._type, $._newline), '>'),
+ 
+     unary_op: $ =>
+       choice(
+@@ -793,10 +801,8 @@
+     while_loop: $ => seq(
+       'while',
+       field('condition', $.parenthesized_expression),
+-      field('body', choice(
+-        $._statement,
+-        $.closure
+-      )),
++      repeat($._newline),
++      field('body', $._statement),
+     ),
+   }
+ });
+--- a/test/corpus/string.test
++++ b/test/corpus/string.test
+@@ -108,20 +108,7 @@
+ and ${interpolation}
+ """
+ ---
+-(source_file
+-  (assignment
+-    (identifier)
+-    (string))
+-  (assignment
+-    (identifier)
+-    (string
+-      (string_content)
+-      (escape_sequence)
+-      (string_content)
+-      (escape_sequence)
+-      (string_content)
+-      (interpolation
+-        (identifier)))))
++(source_file (assignment (identifier) (string)) (assignment (identifier) (string (string_content) (escape_sequence) (string_content) (escape_sequence) (string_content) (interpolation (identifier)) (string_content))))
+ ==========
+ Multiline edge case trailing quotes before interpolation
+ ==========
+@@ -177,16 +164,4 @@
+ $/ escaped slash
+ /$
+ ---
+-(source_file
+-  (assignment
+-    (identifier)
+-    (string
+-      (string_content)
+-      (escape_sequence)
+-      (string_content)
+-      (interpolation
+-        (identifier))
+-      (interpolation
+-        (identifier))
+-      (escape_sequence)
+-      (string_content))))
++(source_file (assignment (identifier) (string (string_content) (escape_sequence) (string_content) (interpolation (identifier)) (string_content) (interpolation (identifier)) (string_content) (escape_sequence) (string_content))))
+--- a/test/corpus/field_access.test
++++ b/test/corpus/field_access.test
+@@ -6,38 +6,7 @@
+   .collect(plusThree)
+   .("ea"+"ch"){println it}
+ ---
+-(source_file
+-  (declaration
+-    name: (identifier)
+-    value: (closure
+-      (juxt_function_call
+-        function: (identifier)
+-        args: (argument_list
+-          (unary_op
+-            (number_literal))))))
+-  (juxt_function_call
+-    function: (dotted_identifier
+-      (function_call
+-        function: (dotted_identifier
+-          (parenthesized_expression
+-            (binary_op
+-              (number_literal)
+-              (number_literal)))
+-          (identifier))
+-        args: (argument_list
+-          (identifier)))
+-      (parenthesized_expression
+-        (binary_op
+-          (string
+-            (string_content))
+-          (string
+-            (string_content)))))
+-    args: (argument_list
+-      (closure
+-        (juxt_function_call
+-          function: (identifier)
+-          args: (argument_list
+-            (identifier)))))))
++(source_file (declaration name: (identifier) value: (closure (binary_op (identifier) (number_literal)))) (juxt_function_call function: (dotted_identifier (function_call function: (dotted_identifier (parenthesized_expression (binary_op (number_literal) (number_literal))) (identifier)) args: (argument_list (identifier))) (parenthesized_expression (binary_op (string (string_content)) (string (string_content))))) args: (argument_list (closure (juxt_function_call function: (identifier) args: (argument_list (identifier)))))))
+ ==========
+ Field access with immediately invoked closure
+ ==========
+@@ -46,39 +15,7 @@
+ .collect(plusThree)
+ .({ return "each"}()){println it}
+ ---
+-(source_file
+-  (declaration
+-    name: (identifier)
+-    value: (closure
+-      (juxt_function_call
+-        function: (identifier)
+-        args: (argument_list
+-          (unary_op
+-            (number_literal))))))
+-  (juxt_function_call
+-    function: (dotted_identifier
+-      (function_call
+-        function: (dotted_identifier
+-          (parenthesized_expression
+-            (binary_op
+-              (number_literal)
+-              (number_literal)))
+-          (identifier))
+-        args: (argument_list
+-          (identifier)))
+-      (parenthesized_expression
+-        (function_call
+-          function: (closure
+-            (return
+-              (string
+-                (string_content))))
+-          args: (argument_list))))
+-    args: (argument_list
+-      (closure
+-        (juxt_function_call
+-          function: (identifier)
+-          args: (argument_list
+-            (identifier)))))))
++(source_file (declaration name: (identifier) value: (closure (binary_op (identifier) (number_literal)))) (juxt_function_call function: (dotted_identifier (function_call function: (dotted_identifier (parenthesized_expression (binary_op (number_literal) (number_literal))) (identifier)) args: (argument_list (identifier))) (parenthesized_expression (function_call function: (closure (return (string (string_content)))) args: (argument_list)))) args: (argument_list (closure (juxt_function_call function: (identifier) args: (argument_list (identifier)))))))
+ ==========
+ Quoted field access
+ ==========
+--- a/test/corpus/function.test
++++ b/test/corpus/function.test
+@@ -186,7 +186,7 @@
+             (string_content))))
+       args: (argument_list))))
+ ==========
+-NOT an immediately invoked closure
++Immediately invoked closure assigned across a newline
+ ==========
+ def friend =
+ {return "hysm"}(1..2)
+@@ -194,11 +194,8 @@
+ (source_file
+   (declaration
+     name: (identifier)
+-    value: (closure
+-      (return
+-        (string
+-          (string_content)))))
+-  (parenthesized_expression
+-    (binary_op
+-      (number_literal)
+-      (number_literal))))
++    value: (function_call
++      function: (closure
++        (return (string (string_content))))
++      args: (argument_list
++        (binary_op (number_literal) (number_literal))))))
+--- /dev/null
++++ b/test/corpus/command-boundaries.test
+@@ -0,0 +1,134 @@
++==========
++adjacent-commands.groovy
++==========
++send 'safe'
++run data['command']
++---
++(source_file (juxt_function_call function: (identifier) args: (argument_list (string (string_content)))) (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))))
++
++==========
++commented-index.groovy
++==========
++send /* same line */ data['command'] // comment
++run 'safe'
++---
++(source_file (juxt_function_call function: (identifier) (comment) args: (argument_list (index (identifier) (string (string_content))))) (comment) (juxt_function_call function: (identifier) args: (argument_list (string (string_content)))))
++
++==========
++indexed-arguments.groovy
++==========
++send data['command'], 'safe'
++---
++(source_file (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))) (string (string_content)))))
++
++==========
++indexed-call.groovy
++==========
++send(data['command'])
++---
++(source_file (function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))))
++
++==========
++indexed-command.groovy
++==========
++send data['command']
++---
++(source_file (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))))
++
++==========
++indexed-method-result.groovy
++==========
++send data['command'].trim()
++---
++(source_file (juxt_function_call function: (identifier) args: (argument_list (function_call function: (dotted_identifier (index (identifier) (string (string_content))) (identifier)) args: (argument_list)))))
++
++==========
++multiline-chain.groovy
++==========
++data
++  .get('command')
++  .trim()
++---
++(source_file (function_call function: (dotted_identifier (function_call function: (dotted_identifier (identifier) (identifier)) args: (argument_list (string (string_content)))) (identifier)) args: (argument_list)))
++
++==========
++named-index.groovy
++==========
++send command: data['command']
++---
++(source_file (juxt_function_call function: (identifier) args: (argument_list (map_item key: (identifier) value: (index (identifier) (string (string_content)))))))
++
++==========
++newline-list.groovy
++==========
++send data
++['command']
++---
++(source_file (juxt_function_call function: (identifier) args: (argument_list (identifier))) (list (string (string_content))))
++
++==========
++newline-reference.groovy
++==========
++send
++data
++---
++(source_file (identifier) (identifier))
++
++==========
++Pipeline followed by a newline and another command
++==========
++pipeline { agent any }
++send 'safe'
++
++---
++(source_file
++  (pipeline (closure (juxt_function_call function: (identifier) args: (argument_list (identifier)))))
++  (juxt_function_call function: (identifier) args: (argument_list (string (string_content)))))
++
++==========
++Indexed command calls remain complete between adjacent statements
++==========
++def data = [command: source(), safe: 'safe']
++// ruleid: flow
++sink data['command']
++sink data['safe']
++// ruleid: flow
++sink(data['command'])
++sink(data['safe'])
++// ruleid: flow
++sink data['command'], 'safe'
++sink data['safe'], source()
++// ruleid: flow
++sink /* argument */ data['command']
++sink 'safe'
++// ruleid: flow
++sink data['command'].trim()
++sink data['safe'].trim()
++// ruleid: flow
++sink data
++['safe']
++sink 'safe'
++[command: source()]
++---
++(source_file (declaration name: (identifier) value: (map (map_item key: (identifier) value: (function_call function: (identifier) args: (argument_list))) (map_item key: (identifier) value: (string (string_content))))) (comment) (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))) (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))) (comment) (function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))) (function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))) (comment) (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))) (string (string_content)))) (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))) (function_call function: (identifier) args: (argument_list)))) (comment) (juxt_function_call function: (identifier) (comment) args: (argument_list (index (identifier) (string (string_content))))) (juxt_function_call function: (identifier) args: (argument_list (string (string_content)))) (comment) (juxt_function_call function: (identifier) args: (argument_list (function_call function: (dotted_identifier (index (identifier) (string (string_content))) (identifier)) args: (argument_list)))) (juxt_function_call function: (identifier) args: (argument_list (function_call function: (dotted_identifier (index (identifier) (string (string_content))) (identifier)) args: (argument_list)))) (comment) (juxt_function_call function: (identifier) args: (argument_list (identifier))) (list (string (string_content))) (juxt_function_call function: (identifier) args: (argument_list (string (string_content)))) (map (map_item key: (identifier) value: (function_call function: (identifier) args: (argument_list)))))
++
++==========
++Multiline list and map command arguments
++==========
++send [
++  source()
++]
++send [command:
++  source(),
++  safe: 'safe'
++]
++send data[
++  'command'
++]
++---
++(source_file
++  (index (identifier) (function_call function: (identifier) args: (argument_list)))
++  (index (identifier)
++    (map_item key: (identifier) value: (function_call function: (identifier) args: (argument_list)))
++    (map_item key: (identifier) value: (string (string_content))))
++  (juxt_function_call function: (identifier) args: (argument_list (index (identifier) (string (string_content))))))

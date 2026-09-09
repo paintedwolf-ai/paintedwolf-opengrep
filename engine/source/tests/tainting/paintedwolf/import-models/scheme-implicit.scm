@@ -1,0 +1,2 @@
+;; ruleid: origin
+(system "ls")

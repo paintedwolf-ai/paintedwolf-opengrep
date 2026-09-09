@@ -1,0 +1,50 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Registered callback input reaches sink",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": false
+      },
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "($SERVER $HANDLER)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$SERVER",
+                "module": "(web server)",
+                "symbol": [
+                  "run-server"
+                ]
+              }
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 1,
+            "path": [],
+            "arities": [
+              2
+            ]
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "(sink $VALUE)"
+        }
+      ]
+    }
+  ]
+}

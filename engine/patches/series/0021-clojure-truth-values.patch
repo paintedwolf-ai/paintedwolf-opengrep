@@ -1,0 +1,24 @@
+--- a/src/analyzing/Eval_il_partial.ml
++++ b/src/analyzing/Eval_il_partial.ml
+@@ -406,12 +406,21 @@
+   | G.Lit (G.String (_, (value, _), _)) when Lang.equal env.lang Lang.Perl ->
+       Some (value <> "" && value <> "0")
+   | G.Lit (G.Null _) when Lang.equal env.lang Lang.Perl -> Some false
++  | G.Lit (G.Null _) when Lang.equal env.lang Lang.Clojure -> Some false
++  | G.Lit (G.Int _ | G.Float _ | G.String _ | G.Char _ | G.Atom _)
++    when Lang.equal env.lang Lang.Clojure -> Some true
++  | G.Cst (G.Cint | G.Cstr)
++    when Lang.equal env.lang Lang.Clojure -> Some true
++  | G.Sym { e = G.Container _; _ }
++    when Lang.equal env.lang Lang.Clojure -> Some true
+   | _ -> None
+ 
+ let rec eval_bool env (exp : IL.exp) =
+   match exp.e with
+   | IL.Operator ((G.Not, _), [IL.Unnamed value]) ->
+       Option.map not (eval_bool env value)
++  | IL.Composite _ | IL.RecordOrDict _ when Lang.equal env.lang Lang.Clojure ->
++      Some true
+   | _ -> bool_of_svalue env (eval env exp)
+ 
+ let eval_concat (env : env) args =

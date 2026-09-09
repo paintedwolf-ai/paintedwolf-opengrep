@@ -1,0 +1,144 @@
+{
+  "rules": [
+    {
+      "id": "conjunction",
+      "languages": [
+        "python"
+      ],
+      "severity": "ERROR",
+      "message": "Labeled value reaches sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source_b()",
+          "exact": true,
+          "label": "B"
+        },
+        {
+          "pattern": "source_a(...)",
+          "exact": true,
+          "label": "A",
+          "requires": "B"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink_and($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires": "A and B"
+        }
+      ]
+    },
+    {
+      "id": "disjunction",
+      "languages": [
+        "python"
+      ],
+      "severity": "ERROR",
+      "message": "Labeled value reaches sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source_b()",
+          "exact": true,
+          "label": "B"
+        },
+        {
+          "pattern": "source_a(...)",
+          "exact": true,
+          "label": "A",
+          "requires": "B"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink_or($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires": "A or C"
+        }
+      ]
+    },
+    {
+      "id": "negative",
+      "languages": [
+        "python"
+      ],
+      "severity": "ERROR",
+      "message": "Labeled value reaches sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source_b()",
+          "exact": true,
+          "label": "B"
+        },
+        {
+          "pattern": "source_a(...)",
+          "exact": true,
+          "label": "A",
+          "requires": "B"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink_negative($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires": "A or not D"
+        }
+      ]
+    },
+    {
+      "id": "nested",
+      "languages": [
+        "python"
+      ],
+      "severity": "ERROR",
+      "message": "Labeled value reaches sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source_b()",
+          "exact": true,
+          "label": "B"
+        },
+        {
+          "pattern": "source_a(...)",
+          "exact": true,
+          "label": "A",
+          "requires": "B"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink_nested($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires": "not (not A or C)"
+        }
+      ]
+    }
+  ]
+}

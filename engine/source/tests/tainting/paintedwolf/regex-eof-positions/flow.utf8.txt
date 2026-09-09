@@ -1,0 +1,2 @@
+# ruleid: endpoint
+unsafe café

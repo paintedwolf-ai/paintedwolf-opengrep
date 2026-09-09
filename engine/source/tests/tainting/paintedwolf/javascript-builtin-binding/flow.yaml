@@ -1,0 +1,19 @@
+rules:
+- id: global-eval
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Unbound evaluator receives input
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: $EVAL($CODE)
+    - metavariable-name:
+        metavariable: $EVAL
+        kind: unbound
+    - metavariable-regex:
+        metavariable: $EVAL
+        regex: ^eval$
+    - focus-metavariable: $CODE

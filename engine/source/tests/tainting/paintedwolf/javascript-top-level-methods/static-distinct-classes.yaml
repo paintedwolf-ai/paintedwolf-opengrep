@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "method-flow",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Top-level method calls preserve identity",
+      "severity": "ERROR",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+version: '3'
+tasks:
+  check:
+    desc: Verify frozen source inputs and release metadata without building or using the network
+    cmds:
+      - python3 engine/build.py --check
+      - python3 scripts/release.py --check-inputs
+  test:
+    desc: Run packaging and runtime regression tests
+    cmds:
+      - python3 -m unittest discover -s engine/tests
+      - python3 -m unittest discover -s engine/signing -p 'test_*.py'
+      - python3 -m unittest discover -s tests
+  build:
+    desc: Resolve or build the qualified native artifact (macOS arm64)
+    cmds:
+      - python3 engine/artifact.py {{.CLI_ARGS}}
+  contracts:
+    desc: Run the frozen engine contract corpus against an explicit executable
+    cmds:
+      - python3 scripts/contracts.py {{.CLI_ARGS}}
+  release-pack:
+    desc: Validate and package an exact native artifact for release
+    cmds:
+      - python3 scripts/release.py {{.CLI_ARGS}}
+  qualify:
+    desc: Requalify a completed native build with every frozen contract and fresh native inspection
+    cmds:
+      - python3 scripts/qualify.py {{.CLI_ARGS}}

@@ -1,0 +1,340 @@
+[
+  {
+    "name": "basic",
+    "target": {
+      "index": 0
+    },
+    "valid": true
+  },
+  {
+    "name": "bounds",
+    "target": {
+      "index": 31,
+      "path": [
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a"
+      ],
+      "arities": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "negative-index",
+    "target": {
+      "index": -1
+    },
+    "valid": false
+  },
+  {
+    "name": "large-index",
+    "target": {
+      "index": 32
+    },
+    "valid": false
+  },
+  {
+    "name": "boolean-index",
+    "target": {
+      "index": true
+    },
+    "valid": false
+  },
+  {
+    "name": "missing-index",
+    "target": {
+      "path": [
+        "query"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "empty-field",
+    "target": {
+      "index": 0,
+      "path": [
+        ""
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "deep-field",
+    "target": {
+      "index": 0,
+      "path": [
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a",
+        "a"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "long-field",
+    "target": {
+      "index": 0,
+      "path": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "empty-arities",
+    "target": {
+      "index": 0,
+      "arities": []
+    },
+    "valid": false
+  },
+  {
+    "name": "negative-arity",
+    "target": {
+      "index": 0,
+      "arities": [
+        -1
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-field",
+    "target": {
+      "index": 0,
+      "typo": true
+    },
+    "valid": false
+  },
+  {
+    "name": "callback-mutation",
+    "target": {
+      "index": 0
+    },
+    "by-side-effect": true,
+    "valid": false
+  },
+  {
+    "name": "array-elements",
+    "target": {
+      "index": 0,
+      "array-elements": true
+    },
+    "valid": true
+  },
+  {
+    "name": "array-elements-type",
+    "target": {
+      "index": 0,
+      "array-elements": "yes"
+    },
+    "valid": false
+  },
+  {
+    "name": "callable-array-head",
+    "target": {
+      "index": 0,
+      "array-elements": true,
+      "array-head-callable": true
+    },
+    "valid": true
+  },
+  {
+    "name": "callable-head-without-array",
+    "target": {
+      "index": 0,
+      "array-head-callable": true
+    },
+    "valid": false
+  },
+  {
+    "name": "callable-head-type",
+    "target": {
+      "index": 0,
+      "array-elements": true,
+      "array-head-callable": 1
+    },
+    "valid": false
+  },
+  {
+    "name": "preserved-array",
+    "target": {
+      "index": 0,
+      "array-elements": true,
+      "preserves-array": true
+    },
+    "valid": true
+  },
+  {
+    "name": "preserve-without-array",
+    "target": {
+      "index": 0,
+      "preserves-array": true
+    },
+    "valid": false
+  },
+  {
+    "name": "preserve-array-type",
+    "target": {
+      "index": 0,
+      "array-elements": true,
+      "preserves-array": "true"
+    },
+    "valid": false
+  },
+  {
+    "name": "string-index",
+    "target": {
+      "index": "0"
+    },
+    "valid": false
+  },
+  {
+    "name": "integral-number-index",
+    "target": {
+      "index": 1.0
+    },
+    "valid": true
+  },
+  {
+    "name": "large-machine-index",
+    "target": {
+      "index": 9223372036854775807
+    },
+    "valid": false
+  },
+  {
+    "name": "string-arity",
+    "target": {
+      "index": 0,
+      "arities": [
+        "4"
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "integral-number-arity",
+    "target": {
+      "index": 0,
+      "arities": [
+        4.0
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "non-string-field",
+    "target": {
+      "index": 0,
+      "path": [
+        1
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "string-array-qualifier",
+    "target": {
+      "index": 0,
+      "array-elements": "true"
+    },
+    "valid": false
+  },
+  {
+    "name": "string-head-qualifier",
+    "target": {
+      "index": 0,
+      "array-elements": true,
+      "array-head-callable": "false"
+    },
+    "valid": false
+  },
+  {
+    "name": "null-array-qualifier",
+    "target": {
+      "index": 0,
+      "array-elements": null
+    },
+    "valid": false
+  },
+  {
+    "name": "fractional-index",
+    "target": {
+      "index": 1.5
+    },
+    "valid": false
+  },
+  {
+    "name": "fractional-arity",
+    "target": {
+      "index": 0,
+      "arities": [
+        1.5
+      ]
+    },
+    "valid": false
+  }
+]

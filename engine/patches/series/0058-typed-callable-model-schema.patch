@@ -1,0 +1,58 @@
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -155,6 +155,8 @@
+   implicit_modules : string list;
+   export_facts : import_export_fact list;
+   complete_exports : complete_module_exports list;
++  callables : Imported_callables.declaration list;
++  callable_profiles : Imported_callables.profile list;
+ }
+ 
+ and metavar_cond_name = {
+@@ -714,6 +716,7 @@
+   (* OPTIONAL fields *)
+   (* --------------------------------- *)
+   options : Rule_options.t option;
++  import_model : import_model option;
+   (* deprecated? or should we resurrect the feature?
+    * TODO: if we resurrect the feature, we should parse the string
+    *)
+@@ -937,6 +940,7 @@
+     validators = None;
+     product = `SAST;
+     dependency_formula = None;
++    import_model = None;
+   }
+ 
+ let rule_of_xpattern ?fix (xlang : Xlang.t) (xpat : Xpattern.t) : rule =
+--- a/src/parsing/Parse_rule.ml
++++ b/src/parsing/Parse_rule.ml
+@@ -1236,6 +1236,7 @@
+       options = options_opt;
+     }
+   in
++  let/ import_model = take_opt rd env Parse_import_model.parse "imports" in
+   let/ mode_opt = take_opt rd env parse_string_wrap "mode" in
+   let/ dep_formula_opt =
+     take_opt rd env parse_dependency_formula "r2c-internal-project-depends-on"
+@@ -1283,6 +1284,7 @@
+       options = options_opt;
+       validators = validators_opt;
+       dependency_formula = dep_formula_opt;
++      import_model;
+     }
+ 
+ let parse_generic_ast ?(error_recovery = false) ?rewrite_rule_ids
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -74,7 +74,9 @@
+     else [("complete-exports", `A (List_.map (fun value -> `O [
+         ("module", `String value.complete_module);
+         ("symbols", names value.complete_symbols)]) model.complete_exports))] in
+-  `O (implicit @ exports @ complete)
++  let callables = Translate_imported_callables.nonempty "callables" Translate_imported_callables.declaration model.callables in
++  let profiles = Translate_imported_callables.nonempty "callable-profiles" Translate_imported_callables.profile model.callable_profiles in
++  `O (implicit @ exports @ complete @ callables @ profiles)
+ 
+ let rec translate_metavar_cond cond : [> `O of (string * Yaml.value) list ] =
+   match cond with

@@ -1,0 +1,191 @@
+diff --git a/src/tainting/Taint_input_env.ml b/src/tainting/Taint_input_env.ml
+--- a/src/tainting/Taint_input_env.ml
++++ b/src/tainting/Taint_input_env.ml
+@@ -43,8 +43,9 @@
+ let add_to_env_aux (taint_inst : Taint_rule_inst.t) env id ii opt_expr =
+   let var = AST_to_IL.var_of_id_info id ii in
+   let var_type = Typing.resolved_type_of_id_info taint_inst.lang var.id_info in
++  let source_matches = taint_inst.preds.is_source (G.Tk (snd id)) in
+   let id_taints =
+-    taint_inst.preds.is_source (G.Tk (snd id))
++    source_matches
+     |> List_.map (fun (x : _ Taint_spec_match.t) -> (x.spec_pm, x.spec))
+     (* These sources come from the parameters to a function,
+         which are not within the normal control flow of a code.
+@@ -52,25 +53,36 @@
+     *)
+     |> T.taints_of_pms ~incoming:T.Taint_set.empty
+   in
+-  let expr_taints, expr_effects =
++  let expr_taints, expr_shape, expr_effects =
+     match opt_expr with
+     | Some e ->
+         let result, effects = check_var_def taint_inst env id ii e in
+-        let xtaint =
+-          Taint_lval_env.find_lval_xtaint taint_inst.lang result (IL_helpers.lval_of_var var)
++        let cell =
++          Taint_lval_env.find_lval taint_inst.lang result
++            (IL_helpers.lval_of_var var)
+         in
+-        (Xtaint.to_taints xtaint, effects)
+-    | None -> (T.Taint_set.empty, Effects.empty)
++        let xtaint, shape =
++          match cell with
++          | Some (Shape_and_sig.Shape.Cell (xtaint, shape)) -> (xtaint, shape)
++          | None -> (`None, Shape_and_sig.Shape.Bot)
++        in
++        (Xtaint.to_taints xtaint, shape, effects)
++    | None -> (T.Taint_set.empty, Shape_and_sig.Shape.Bot, Effects.empty)
+   in
+   let taints = id_taints |> T.Taint_set.union expr_taints in
+   let taints =
+     Dataflow_tainting.drop_taints_if_bool_or_number taint_inst.options taints
+       var_type
+   in
++  let shape =
++    Dataflow_tainting.modeled_source_shape T.Taint_set.empty source_matches
++      expr_shape
++  in
+   let env =
+     env
+-    |> Taint_lval_env.add_lval taint_inst.lang (IL_helpers.lval_of_var var)
+-         taints
++    |> Taint_lval_env.add_lval_shape taint_inst.lang
++         (IL_helpers.lval_of_var var)
++         taints shape
+   in
+   (env, expr_effects)
+ 
+diff --git a/src/tainting/Dataflow_tainting.mli b/src/tainting/Dataflow_tainting.mli
+--- a/src/tainting/Dataflow_tainting.mli
++++ b/src/tainting/Dataflow_tainting.mli
+@@ -60,3 +60,9 @@
+ 
+ val reset_constructor : unit -> unit
+ val available_lambdas : IL.fun_cfg -> IL.lambdas_cfgs
++
++val modeled_source_shape :
++  Taint.Taint_set.t ->
++  Rule.taint_source Taint_spec_match.t list ->
++  Shape_and_sig.Shape.shape ->
++  Shape_and_sig.Shape.shape
+diff --git a/src/tainting/Dataflow_tainting.ml b/src/tainting/Dataflow_tainting.ml
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -3468,10 +3468,13 @@
+                         let lval_env =
+                           Lval_env.clean env.taint_inst.lang lval_env leaf_lval
+                         in
+-                        let source_taints, _shape, lval_env =
++                        let source_taints, source_shape, lval_env =
+                           check_tainted_var { env with lval_env } leaf_name
+                         in
+-                        let leaf_shape = S.Arg (taint_arg, [ offset ]) in
++                        let leaf_shape = match source_shape with
++                          | S.Bot -> S.Arg (taint_arg, [ offset ])
++                          | shape -> shape
++                        in
+                         let leaf_taint_lval : T.lval =
+                           { base = BArg taint_arg; offset }
+                         in
+diff --git a/src/tainting/Taint_signature_extractor.ml b/src/tainting/Taint_signature_extractor.ml
+--- a/src/tainting/Taint_signature_extractor.ml
++++ b/src/tainting/Taint_signature_extractor.ml
+@@ -117,11 +117,6 @@
+          Taint_lval_env.add_lval lang il_lval taint_set taint_env)
+        Taint_lval_env.empty
+ 
+-(** Helper to add a parameter with Arg shape to the environment *)
+-let add_param_to_env lang il_lval taint_set taint_arg env =
+-  let param_shape = Shape.Arg (taint_arg, [ [] ]) in
+-  Taint_lval_env.add_lval_shape lang il_lval taint_set param_shape env
+-
+ (* [pattern_leaves_with_offsets] moved to [Dataflow_tainting] to avoid a
+  * module-dependency cycle; this file already depends on
+  * [Dataflow_tainting.fixpoint]. *)
+@@ -150,10 +145,8 @@
+                  Taint.{ orig = Var taint_lval; tokens = [] }
+                in
+                (* Check if this parameter matches a source pattern *)
++               let source_pms = taint_inst.TRI.preds.is_source (G.Tk (snd pname.ident)) in
+                let source_taints =
+-                 let _, tok = pname.ident in
+-                 let any = G.Tk tok in
+-                 let source_pms = taint_inst.TRI.preds.is_source any in
+                  if source_pms <> [] then
+                    (* Create Src taints for matching sources using
+                       taints_of_pms *)
+@@ -167,11 +160,10 @@
+                  else Taint.Taint_set.empty
+                in
+                let taint_set = Taint.Taint_set.union (Taint.Taint_set.singleton generic_taint) source_taints in
+-               (* Give the parameter an Arg shape so it can be used in HOF *)
+-               let new_env =
+-                 add_param_to_env taint_inst.TRI.lang il_lval taint_set
+-                   taint_arg env
+-               in
++               let param_shape = Dataflow_tainting.modeled_source_shape
++                   Taint.Taint_set.empty source_pms (Shape.Arg (taint_arg, [ [] ])) in
++               let new_env = Taint_lval_env.add_lval_shape taint_inst.TRI.lang
++                   il_lval taint_set param_shape env in
+                (* For destructuring [ParamPattern], additionally seed each
+                 * leaf's lval with its offset path off the implicit binder.
+                 * The shape system handles call-site projection from the
+@@ -212,12 +204,9 @@
+                               Taint.
+                                 { orig = Var leaf_taint_lval; tokens = [] }
+                             in
++                            let source_pms = taint_inst.TRI.preds.is_source
++                                (G.Tk (snd leaf_name.ident)) in
+                             let source_taints =
+-                              let _, tok = leaf_name.ident in
+-                              let any = G.Tk tok in
+-                              let source_pms =
+-                                taint_inst.TRI.preds.is_source any
+-                              in
+                               if source_pms <> [] then
+                                 let pms_with_specs =
+                                   source_pms
+@@ -239,6 +228,8 @@
+                               Taint.Taint_set.add_taint leaf_taint
+                                 source_taints
+                             in
++                            let leaf_shape = Dataflow_tainting.modeled_source_shape
++                                Taint.Taint_set.empty source_pms leaf_shape in
+                             Taint_lval_env.add_lval_shape taint_inst.TRI.lang
+                               leaf_lval leaf_taints leaf_shape env)
+                           new_env
+diff --git a/src/engine/Match_tainting_mode.ml b/src/engine/Match_tainting_mode.ml
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -40,6 +40,15 @@
+ module Effect = Shape_and_sig.Effect
+ module Effects = Shape_and_sig.Effects
+ module Signature = Shape_and_sig.Signature
++
++let environment_has_sources env =
++  Lval_env.seq_of_tainted env
++  |> Seq.exists (fun (_, cell) ->
++         Taint_shape.enum_in_cell cell
++         |> Seq.exists (fun (_, taints) ->
++                T.Taint_set.elements taints
++                |> List.exists (fun (guarded : T.guarded_taint) ->
++                       match guarded.taint.orig with T.Src _ -> true | _ -> false)))
+ 
+ type fun_info = {
+   name : IL.name;
+@@ -570,8 +579,12 @@
+               |> List.map (fun (rwm, _sink) -> rwm.Range_with_metavars.r)
+             in
+             let source_functions =
+-              Graph_from_AST.find_functions_containing_ranges ~lang ast
+-                source_ranges
++              if environment_has_sources glob_env then
++                Call_graph.G.fold_vertex (fun vertex roots -> vertex :: roots)
++                  call_graph []
++              else
++                Graph_from_AST.find_functions_containing_ranges ~lang ast
++                  source_ranges
+             in
+             let sink_functions =
+               Graph_from_AST.find_functions_containing_ranges ~lang ast

@@ -1,0 +1,16 @@
+rules:
+- id: single
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: One present slot
+  pattern: observe([$X])
+- id: leading
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Leading absent slot
+  pattern: observe([,$X])
+- id: trailing
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Trailing absent slot
+  pattern: observe([$X,,])

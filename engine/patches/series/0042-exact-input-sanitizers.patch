@@ -1,0 +1,32 @@
+--- a/src/tainting/Taint_input_env.ml
++++ b/src/tainting/Taint_input_env.ml
+@@ -40,6 +40,17 @@
+   in
+   (end_mapping.(cfg.exit).Dataflow_core.out_env, effects)
+ 
++let unconditional_input_sanitizer (taint_inst : Taint_rule_inst.t) id sources =
++  taint_inst.preds.is_sanitizer (G.Tk (snd id))
++  |> List.exists (fun (matched : Rule.taint_sanitizer Taint_spec_match.t) ->
++         let spec = matched.spec in
++         spec.sanitizer_exact && Taint_spec_match.is_exact matched
++         && not spec.sanitizer_by_side_effect
++         && Option.is_none spec.sanitizer_output_type
++         && Option.is_none spec.sanitizer_requires_type
++         && Option.is_none spec.sanitizer_requires_model_type
++         && (not spec.not_conflicting || List.is_empty sources))
++
+ let add_to_env_aux (taint_inst : Taint_rule_inst.t) env id ii opt_expr =
+   let var = AST_to_IL.var_of_id_info id ii in
+   let var_type = Typing.resolved_type_of_id_info taint_inst.lang var.id_info in
+@@ -69,7 +80,10 @@
+         (Xtaint.to_taints xtaint, shape, effects)
+     | None -> (T.Taint_set.empty, Shape_and_sig.Shape.Bot, Effects.empty)
+   in
+-  let taints = id_taints |> T.Taint_set.union expr_taints in
++  let taints =
++    if unconditional_input_sanitizer taint_inst id source_matches then T.Taint_set.empty
++    else id_taints |> T.Taint_set.union expr_taints
++  in
+   let taints =
+     Dataflow_tainting.drop_taints_if_bool_or_number taint_inst.options taints
+       var_type

@@ -1,0 +1,41 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "powershell"
+      ],
+      "severity": "ERROR",
+      "message": "Input reaches the selected method argument",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "Read-Input",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "$OBJ.Send($VALUE, $OTHER)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$OBJ.SendSecond($OTHER, $VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -1123,8 +1123,14 @@
+   | G.DeRef _ -> (
+       try
+         let ss_lv, lval = lval env lhs in
+-        let instr = mk_s (Instr (mk_i (Assign (lval, rhs_exp)) eorig)) in
+-        (ss_lv @ [instr], mk_e (Fetch lval) (SameAs lhs))
++        if Lang.is_js env.lang then
++          let value_stmts, _, value = aux_var ~force:true env tok rhs_exp in
++          let result = mk_e (Fetch value) (related_exp g_expr) in
++          let instr = mk_s (Instr (mk_i (Assign (lval, result)) eorig)) in
++          (ss_lv @ value_stmts @ [instr], result)
++        else
++          let instr = mk_s (Instr (mk_i (Assign (lval, rhs_exp)) eorig)) in
++          (ss_lv @ [instr], mk_e (Fetch lval) (SameAs lhs))
+       with
+       | Fixme (kind, any_generic) ->
+           (* lval translation failed, we use a fresh lval instead *)

@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "id": "method-formals",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Source method formal list is unchanged",
+      "severity": "ERROR",
+      "pattern": "class Service { run($ARG) { ... } }"
+    },
+    {
+      "id": "argument-syntax",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Arguments syntax is unchanged",
+      "severity": "ERROR",
+      "pattern": "sink(arguments[0])"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "swift"
+      ],
+      "severity": "ERROR",
+      "message": "Optional binding flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern-either": [
+            {
+              "pattern": "source()"
+            },
+            {
+              "pattern": "sourceFlag()"
+            }
+          ],
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern-either": [
+            {
+              "pattern": "sink($X)"
+            },
+            {
+              "pattern": "sinkReturning($X)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

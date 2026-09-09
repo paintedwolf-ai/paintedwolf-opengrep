@@ -1,0 +1,10 @@
+rules:
+- id: module-origin
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Imported module binding
+  patterns:
+  - pattern: $CALL(...)
+  - metavariable-name:
+      metavariable: $CALL
+      module: express

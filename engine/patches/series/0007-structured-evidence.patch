@@ -1,0 +1,233 @@
+diff --git a/cli/src/semgrep/error.py b/cli/src/semgrep/error.py
+index 48f7b82..25e001e 100644
+--- a/cli/src/semgrep/error.py
++++ b/cli/src/semgrep/error.py
+@@ -100,6 +100,8 @@ class SemgrepError(Exception):
+ # used in text and sarif output
+ def error_type_string(type_: out.ErrorType) -> str:
+     # convert to the same string of out.ParseError for now
++    if isinstance(type_.value, out.PartialSemantics):
++        return "Partial semantic analysis"
+     if isinstance(type_.value, out.PartialParsing):
+         return error_type_string(out.ErrorType(out.ParseError()))
+     # constructors with arguments
+@@ -137,6 +139,8 @@ class SemgrepCoreError(SemgrepError):
+         if self.core.rule_id:
+             base = dataclasses.replace(base, rule_id=self.core.rule_id)
+ 
++        if self.core.path:
++            base = dataclasses.replace(base, path=self.core.path)
+         if self.core.location:
+             # For rule errors path is a temp file so for now will just be
+             # confusing to add
+@@ -147,6 +151,9 @@ class SemgrepCoreError(SemgrepError):
+ 
+         if self.spans:
+             base = dataclasses.replace(base, spans=self.spans)
++        elif isinstance(self.core.error_type.value, out.PartialSemantics) and self.core.location:
++            location = self.core.location
++            base = dataclasses.replace(base, spans=[out.ErrorSpan(file=location.path, start=location.start, end=location.end)])
+ 
+         return base
+ 
+diff --git a/src/core/Core_error.ml b/src/core/Core_error.ml
+index e3d12e1..1c8812d 100644
+--- a/src/core/Core_error.ml
++++ b/src/core/Core_error.ml
+@@ -44,6 +44,7 @@ type t = {
+    * attached to a file. See exn_to_error() for example.
+    *)
+   loc : Tok.location option;
++  target_path : Fpath.t option;
+   rule_id : Rule_ID.t option;
+   (* TODO? diff with msg? *)
+   details : string option;
+@@ -81,7 +82,7 @@ let please_file_issue_text =
+   "An error occurred while invoking the Opengrep engine. Please help us fix \
+    this by creating an issue at https://github.com/opengrep/opengrep"
+ 
+-let mk_error ?rule_id ?(msg = "") ?(loc : Tok.location option)
++let mk_error ?rule_id ?(msg = "") ?(loc : Tok.location option) ?target_path
+     (err : Out.error_type) : t =
+   let msg =
+     match err with
+@@ -103,6 +104,7 @@ let mk_error ?rule_id ?(msg = "") ?(loc : Tok.location option)
+     | OutOfMemoryDuringInterfile
+     | PatternParseError _
+     | PatternParseError0
++    | PartialSemantics _
+     | PartialParsing _
+     | IncompatibleRule _
+     | IncompatibleRule0
+@@ -114,7 +116,7 @@ let mk_error ?rule_id ?(msg = "") ?(loc : Tok.location option)
+     | DependencyResolutionError _ ->
+         msg
+   in
+-  { loc; typ = err; msg; details = None; rule_id }
++  { loc; target_path; typ = err; msg; details = None; rule_id }
+ 
+ (* Why a file in addition to tok? Can't we just use Tok.file_of_tok on it?
+  * Because in some cases this may be a fake tok with a wrong file,
+@@ -162,6 +164,7 @@ let error_of_rule_error (err : Rule_error.t) : t =
+   | InvalidRule
+       (InvalidPattern (pattern, xlang, message, yaml_path), rule_id, pos) ->
+       {
++        target_path = Some file;
+         rule_id = Some rule_id;
+         typ = Out.PatternParseError yaml_path;
+         (* TODO: Switch to using option and report better info for figuring out why the location is missing *)
+@@ -283,6 +286,7 @@ let exn_to_error ?(file : Fpath.t option) (e : Exception.t) : t =
+         | None -> Out.FatalError
+       in
+       {
++        target_path = file;
+         rule_id = None;
+         typ;
+         loc;
+@@ -325,7 +329,8 @@ let severity_of_error (typ : Out.error_type) : Out.error_severity =
+   | TooManyMatches
+   | LexicalError
+   | ParseError
+-  | PartialParsing _
++  | PartialSemantics _
++    | PartialParsing _
+   | OtherParseError
+   | InvalidYaml
+   | Timeout
+diff --git a/src/core/Core_error.mli b/src/core/Core_error.mli
+index 5e1af4e..e2453ae 100644
+--- a/src/core/Core_error.mli
++++ b/src/core/Core_error.mli
+@@ -10,6 +10,7 @@ type t = {
+   typ : Semgrep_output_v1_t.error_type;
+   msg : string;
+   loc : Tok.location option;
++  target_path : Fpath.t option;
+   rule_id : Rule_ID.t option;
+   details : string option;
+ }
+@@ -28,6 +29,7 @@ val mk_error :
+   ?rule_id:Rule_ID.t ->
+   ?msg:string ->
+   ?loc:Tok.location ->
++  ?target_path:Fpath.t ->
+   Semgrep_output_v1_t.error_type ->
+   t
+ 
+diff --git a/src/osemgrep/core/Error.ml b/src/osemgrep/core/Error.ml
+index 1eb56cd..b03d99b 100644
+--- a/src/osemgrep/core/Error.ml
++++ b/src/osemgrep/core/Error.ml
+@@ -106,6 +106,7 @@ let () =
+ let rec string_of_error_type (error_type : OutJ.error_type) : string =
+   match error_type with
+   (* python: convert to the same string of core.ParseError for now *)
++  | PartialSemantics _ -> "Partial semantic analysis"
+   | PartialParsing _ -> string_of_error_type ParseError
+   (* other constructors with arguments *)
+   | PatternParseError _ -> string_of_error_type PatternParseError0
+diff --git a/src/osemgrep/reporting/Cli_json_output.ml b/src/osemgrep/reporting/Cli_json_output.ml
+index 291fa6c..6d6a1ed 100644
+--- a/src/osemgrep/reporting/Cli_json_output.ml
++++ b/src/osemgrep/reporting/Cli_json_output.ml
+@@ -51,7 +51,7 @@ let error_message ~rule_id ~(location : Out.location option)
+        the broken rule(s). *)
+     | Some id, (RuleParseError | PatternParseError _) -> spf "in rule %s" id
+     | ( Some id,
+-        ( PartialParsing _ | ParseError | OtherParseError | AstBuilderError
++        ( PartialSemantics _ | PartialParsing _ | ParseError | OtherParseError | AstBuilderError
+         | InvalidYaml | MatchingError | SemgrepMatchFound | TooManyMatches
+         | FatalError | Timeout | OutOfMemory | TimeoutDuringInterfile
+         | OutOfMemoryDuringInterfile ) ) ->
+@@ -96,6 +96,7 @@ let error_spans ~(error_type : Out.error_type) ~(location : Out.location) =
+         }
+       in
+       Some [ span ]
++  | PartialSemantics _ -> Some [core_location_to_error_span location]
+   | PartialParsing locs -> Some (locs |> List_.map core_location_to_error_span)
+   | _else_ -> None
+ 
+@@ -106,7 +107,7 @@ let exit_code_of_error_type (error_type : Out.error_type) : Exit_code.t =
+   match error_type with
+   | ParseError
+   | LexicalError
+-  | PartialParsing _ ->
++  | PartialSemantics _ | PartialParsing _ ->
+       Exit_code.invalid_code ~__LOC__
+   (* rule errors lead to `missing_config` *)
+   | InvalidYaml -> Exit_code.missing_config ~__LOC__
+@@ -147,6 +148,7 @@ let cli_error_of_core_error (x : Out.core_error) : Out.cli_error =
+    severity;
+    location;
+    message = core_message;
++   path = target_path;
+    rule_id;
+    (* LATER *) details = _;
+   } ->
+@@ -156,7 +158,7 @@ let cli_error_of_core_error (x : Out.core_error) : Out.cli_error =
+         (* # Rule id not important for parse errors *)
+         | ParseError
+         | LexicalError
+-        | PartialParsing _
++        | PartialSemantics _ | PartialParsing _
+         | SemgrepWarning
+         | SemgrepError
+         | InvalidRuleSchemaError ->
+@@ -192,7 +194,7 @@ let cli_error_of_core_error (x : Out.core_error) : Out.cli_error =
+             None
+         | ParseError
+         | LexicalError
+-        | PartialParsing _
++        | PartialSemantics _ | PartialParsing _
+         | OtherParseError
+         | AstBuilderError
+         | InvalidYaml
+@@ -213,7 +215,9 @@ let cli_error_of_core_error (x : Out.core_error) : Out.cli_error =
+         | IncompatibleRule0
+         | MissingPlugin
+         | DependencyResolutionError _ ->
+-            location |> Option.map (fun (x : Out.location) -> x.path)
++            (match location with
++             | Some location -> Some location.Out.path
++             | None -> target_path)
+       in
+       let message =
+         Some (error_message ~rule_id ~error_type ~location ~core_message)
+diff --git a/src/parsing/Parse_target.ml b/src/parsing/Parse_target.ml
+index 8a4fcd3..2fcf1da 100644
+--- a/src/parsing/Parse_target.ml
++++ b/src/parsing/Parse_target.ml
+@@ -103,7 +103,7 @@ let just_resolve_name lang ast =
+   (* NOTE: It's better not to use this any more, since we are sharing the
+    * module instance in AST_generic. *)
+   (* AST_generic.SId.unsafe_reset_counter (); *)
+-  Naming_AST.resolve lang ast;
++  let ast = Naming_AST.resolve lang ast in
+   (* In Ruby and Crystal, bare unresolved identifiers are method calls. *)
+   let ast =
+     if Lang.equal lang Lang.Ruby || Lang.equal lang Lang.Crystal then
+diff --git a/src/reporting/Core_json_output.ml b/src/reporting/Core_json_output.ml
+index 66c6f4c..7b9c303 100644
+--- a/src/reporting/Core_json_output.ml
++++ b/src/reporting/Core_json_output.ml
+@@ -480,7 +480,7 @@ let error_to_error (err : Core_error.t) : Out.core_error =
+   let severity = E.severity_of_error err.typ in
+   let message = err.msg in
+   let details = err.details in
+-  { error_type; rule_id; severity; location; message; details }
++  { error_type; rule_id; severity; location; message; details; path = err.target_path }
+ 
+ let extra_to_extra (extra : Matching_explanation.extra) :
+     Out.matching_explanation_extra =
+diff --git a/src/reporting/Nosemgrep.ml b/src/reporting/Nosemgrep.ml
+index cc21539..86b8127 100644
+--- a/src/reporting/Nosemgrep.ml
++++ b/src/reporting/Nosemgrep.ml
+@@ -255,6 +255,7 @@ let rule_match_nosem ~nosem_inline_re ~nosem_previous_line_re
+               let core_error =
+                 {
+                   Core_error.rule_id = None;
++                  target_path = None;
+                   typ = SemgrepWarning;
+                   msg;
+                   loc = Some (Lazy.force loc);

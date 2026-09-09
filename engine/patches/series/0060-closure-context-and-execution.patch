@@ -1,0 +1,285 @@
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -396,9 +396,10 @@
+         record_matches (Effects.union import_effects glob_effects);
+         let model_values =
+           (Lang.is_js lang
+-           && List.exists
+-                (fun (_, source) -> Option.is_some source.R.source_model_type)
+-                spec_matches.sources)
++           && (taint_inst.options.taint_intrafile
++               || List.exists
++                    (fun (_, source) -> Option.is_some source.R.source_model_type)
++                    spec_matches.sources))
+           || (List.mem lang [Lang.Clojure; Lang.Scheme]
+               && (List.exists (fun (_, source) -> Option.is_some source.R.source_to_parameter)
+                     spec_matches.sources
+@@ -640,7 +641,7 @@
+                 (updated_db : Shape_and_sig.signature_database) :
+                 Shape_and_sig.signature_database =
+               let _flow, fdef_effects, _mapping =
+-                check_fundef taint_inst info.name ~glob_env
++                check_fundef taint_inst info.name ~glob_env ~lambda_bodies
+                   ?class_name:info.class_name_str ~signature_db:updated_db
+                   ?builtin_signature_db ?call_graph:(Some relevant_graph)
+                   info.fdef
+@@ -688,6 +689,7 @@
+             let arity = get_arity params info lang in
+             let updated_db, _signature =
+               Taint_signature_extractor.extract_signature_with_file_context
++                ~in_env:glob_env ~lambda_bodies
+                 ~arity:(Shape_and_sig.Arity_exact arity) ~db
+                 ?builtin_signature_db taint_inst ~name:info.name
+                 ~method_properties:info.method_properties
+@@ -708,6 +710,7 @@
+                   let db', _ =
+                     Taint_signature_extractor
+                     .extract_signature_with_file_context
++                      ~in_env:glob_env ~lambda_bodies
+                       ~arity:(Shape_and_sig.Arity_exact (arity - 1))
+                       ~db:updated_db ?builtin_signature_db taint_inst
+                       ~name:info.name
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -1037,7 +1037,8 @@
+     let* lval = LV.lval_of_instr_opt instr in
+     let* ((lname, _) as lambda) = LV.lval_is_lambda lambdas lval in
+     if
+-      IL.NameSet.mem lname env.func.used_lambdas
++      Taint_lambda_call.supports env.taint_inst.lang
++      || IL.NameSet.mem lname env.func.used_lambdas
+       || Option.is_none env.in_lambda
+          && IL.NameSet.mem lname env.func.deferred_functions
+     then None
+@@ -3788,8 +3789,12 @@
+             Option.fold ~none:lval_env'
+               ~some:(Lval_env.clean env.taint_inst.lang lval_env') (LV.lval_of_instr_opt x)
+           else lval_env' in
++        let contextual_call = match x.IL.i with
++          | Call (_, callee, args) -> contextual_call_is_known env callee args
++          | _ -> false
++        in
+         let lval_env' =
+-          if Lang.is_js env.taint_inst.lang then
++          if Lang.is_js env.taint_inst.lang && not contextual_call then
+             let preserved =
+               Taint_callback_models.preserved_arrays lval_env'
+                 !(env.callback_requests)
+@@ -3963,7 +3968,7 @@
+         in'
+   in
+   let effects_lambdas, out' =
+-    do_lambdas { env with lval_env = out' } fun_cfg.lambdas node
++    do_lambdas ~entry_env:env { env with lval_env = out' } fun_cfg.lambdas node
+   in
+   env.effects_acc := Effects.union effects_lambdas !(env.effects_acc);
+   let env_at_exit = { env with lval_env = out' } in
+@@ -4052,7 +4057,7 @@
+         (Effects.union effects default_effects, current))
+     (Effects.empty, initial) snapshots
+ 
+-and do_lambdas env (lambdas : IL.lambdas_cfgs) node =
++and do_lambdas ~entry_env env (lambdas : IL.lambdas_cfgs) node =
+   let join_contexts = function
+     | [] -> Lval_env.empty
+     | first :: rest -> Lval_env.union_list ~default:first rest
+@@ -4079,7 +4084,7 @@
+     match node.F.n with
+     | NInstr { i = Call (_, { e = Fetch callee; _ }, args); _ }
+       when Taint_lambda_call.supports env.taint_inst.lang || List.is_empty args -> (
+-        match Lval_env.find_lval env.taint_inst.lang env.lval_env callee with
++        match Lval_env.find_lval env.taint_inst.lang entry_env.lval_env callee with
+         | Some (S.Cell (_, S.Callable targets)) -> targets.closures
+         | _ -> IL.NameSet.empty)
+     | _ -> IL.NameSet.empty
+@@ -4108,10 +4113,42 @@
+              (fun cfg -> (name, cfg))
+              (IL.NameMap.find_opt name available_bodies))
+   in
++  let declared_inputs =
++    match node.F.n with
++    | NInstr { i = AssignAnon (target, Lambda _); _ } ->
++        (match LV.lval_is_lambda lambdas target with
++        | Some (_, body) as candidate ->
++            let declared = body.IL.params |> Fold_IL_params.fold
++              (fun found id _ _ ->
++                found || not (List.is_empty (env.taint_inst.preds.is_source (G.Tk (snd id))))) false
++            in
++            if declared then Option.to_list candidate else []
++        | None -> [])
++    | _ -> []
++  in
++  let contextual_call = match node.F.n with
++    | NInstr { i = Call (_, callee, args); _ } -> contextual_call_is_known entry_env callee args
++    | _ -> false in
++  let escaping_lambdas =
++    if contextual_call then []
++    else if not (Taint_lambda_call.supports env.taint_inst.lang) then
++      lambdas_to_analyze_in_node env lambdas node
++    else if not (Taint_closure_values.escapes node.F.n) then []
++    else
++      let names, limited =
++        Taint_closure_values.from_lvals
++          ~lookup:(Lval_env.find_lval env.taint_inst.lang entry_env.lval_env)
++          (Taint_closure_values.read_values node.F.n)
++      in
++      if limited then Option.iter Taint_model_types.call_limit (LV.orig_of_node node.F.n);
++      names |> IL.NameSet.elements
++      |> List.filter_map (fun name ->
++           Option.map (fun cfg -> (name, cfg)) (IL.NameMap.find_opt name available_bodies))
++  in
+   let lambdas_to_analyze =
+     List.sort_uniq
+       (fun (left, _) (right, _) -> IL.compare_name left right)
+-      (direct_lambdas @ lambdas_to_analyze_in_node env lambdas node)
++      (direct_lambdas @ declared_inputs @ escaping_lambdas)
+     |> List.filter (fun (name, _) ->
+            if not (Taint_lambda_call.supports env.taint_inst.lang) then true
+            else if
+@@ -4130,10 +4167,7 @@
+ 
+   let guaranteed_call =
+     Taint_lambda_call.supports env.taint_inst.lang
+-    && (match node.F.n with
+-        | NInstr { i = Call (_, callee, args); _ } ->
+-            contextual_call_is_known env callee args
+-        | _ -> false)
++    && contextual_call
+     && Int.equal (IL.NameSet.cardinal directly_called) 1
+     &&
+     match lambdas_to_analyze with
+@@ -4142,7 +4176,7 @@
+     | _ -> false
+   in
+   let needed_vars =
+-    if guaranteed_call then
++    if node_is_call then
+       IL.NameSet.union env.needed_vars (Lval_env.names env.lval_env)
+     else env.needed_vars
+   in
+@@ -4241,7 +4275,7 @@
+   in
+   let out_env =
+     match node.F.n with
+-    | NInstr { i = Call (Some result, callee, args); iorig } ->
++    | NInstr { i = Call (Some result, _, _); iorig } ->
+         let taints, returned_shape, out_env =
+           List.fold_left2
+             (fun (taints, returned_shape, current) ((candidate, cfg), shape) effects ->
+@@ -4265,13 +4299,12 @@
+         (match returned_shape with
+         | None -> out_env
+         | Some returned_shape ->
+-            check_orig_if_sink env iorig taints returned_shape;
+             let previous_taints, previous_shape =
+               match Lval_env.find_lval env.taint_inst.lang out_env result with
+               | Some (S.Cell (xtaint, shape)) -> (Xtaint.to_taints xtaint, shape)
+               | None -> (Taints.empty, S.Bot) in
+             let shape =
+-              if contextual_call_is_known env callee args then
++              if contextual_call then
+                 Shape.unify_shape previous_shape returned_shape
+               else
+                 match Shape.join_cell (S.Cell (`None, previous_shape))
+@@ -4280,9 +4313,13 @@
+             let current = Lval_env.clean env.taint_inst.lang out_env result
+               |> Lval_env.add_lval_shape env.taint_inst.lang result
+                    (Taints.union previous_taints taints) shape in
+-            if Lang.is_js env.taint_inst.lang then
+-              Taint_model_types.share_value env.taint_inst.lang current result
+-            else current)
++            let current =
++              if Lang.is_js env.taint_inst.lang then
++                Taint_model_types.share_value env.taint_inst.lang current result
++              else current
++            in
++            check_orig_if_sink { env with lval_env = current } iorig taints returned_shape;
++            current)
+     | _ -> out_env
+   in
+   (effects, out_env)
+@@ -4294,6 +4331,7 @@
+     {
+       func with
+       active_lambdas = IL.NameSet.add lambda_name func.active_lambdas;
++      used_lambdas = lambdas_used_in_cfg lambda_cfg;
+     }
+   in
+   Log.debug (fun m ->
+@@ -4651,7 +4689,7 @@
+                        il_params = lambda_cfg.params;
+                        param_sids = mk_param_sids lambda_cfg.params;
+                        best_matches = lambda_best_matches;
+-                       used_lambdas = IL.NameSet.empty;
++                       used_lambdas = lambdas_used_in_cfg lambda_cfg;
+                        deferred_functions = IL.NameSet.empty;
+                        lambda_bodies;
+                        active_lambdas = IL.NameSet.singleton lambda_name;
+--- a/src/tainting/Taint_signature_extractor.ml
++++ b/src/tainting/Taint_signature_extractor.ml
+@@ -242,6 +242,7 @@
+   env
+ 
+ let extract_signature (taint_inst : TRI.t) ?(in_env : Taint_lval_env.t option)
++    ?lambda_bodies
+     ?(name : IL.name option) ?(signature_db : signature_database option)
+     ?(builtin_signature_db : Shape_and_sig.builtin_signature_database option)
+     ?(call_graph : Call_graph.G.t option = None)
+@@ -254,7 +255,7 @@
+     | None -> param_assumptions
+   in
+   let fixpoint_effects, mapping =
+-    Dataflow_tainting.fixpoint taint_inst ~in_env:combined_env ?name
++    Dataflow_tainting.fixpoint taint_inst ~in_env:combined_env ?lambda_bodies ?name
+       ?signature_db ?builtin_signature_db ?call_graph func_cfg
+   in
+   Log.debug (fun m ->
+@@ -433,6 +434,7 @@
+   |> List.rev
+ 
+ let extract_signature_with_file_context
++    ?in_env ?lambda_bodies
+     ~(arity : Shape_and_sig.sig_arity)
+     ?(db : signature_database = Shape_and_sig.empty_signature_database ())
+     ?(builtin_signature_db : Shape_and_sig.builtin_signature_database option)
+@@ -447,6 +449,12 @@
+     mk_global_assumptions_with_sids taint_inst.lang global_sids
+   in
+ 
++  let global_env =
++    match in_env with
++    | None -> global_env
++    | Some env -> Taint_lval_env.add_assumptions taint_inst.lang env global_env
++  in
++
+   (* Add method property assumptions for methods with properties *)
+   let combined_global_env =
+     match method_properties with
+@@ -459,7 +467,7 @@
+   in
+ 
+   let { signature; _ } =
+-    extract_signature taint_inst ~in_env:combined_global_env ~name
++    extract_signature taint_inst ~in_env:combined_global_env ?lambda_bodies ~name
+       ~signature_db:db ?builtin_signature_db ~call_graph func_cfg
+   in
+   let updated_db = Shape_and_sig.add_signature db (Function_id.of_il_name name) {sig_ = signature; arity} in
+--- a/src/tainting/Taint_signature_extractor.mli
++++ b/src/tainting/Taint_signature_extractor.mli
+@@ -21,6 +21,7 @@
+ val extract_signature :
+   Taint_rule_inst.t ->
+   ?in_env:Taint_lval_env.t ->
++  ?lambda_bodies:IL.lambdas_cfgs ->
+   ?name:IL.name ->
+   ?signature_db:signature_database ->
+   ?builtin_signature_db:Shape_and_sig.builtin_signature_database ->
+@@ -38,6 +39,8 @@
+ (** Register global variables for tracking without pre-tainting them *)
+ 
+ val extract_signature_with_file_context :
++  ?in_env:Taint_lval_env.t ->
++  ?lambda_bodies:IL.lambdas_cfgs ->
+   arity:Shape_and_sig.sig_arity ->
+   ?db:signature_database ->
+   ?builtin_signature_db:Shape_and_sig.builtin_signature_database ->

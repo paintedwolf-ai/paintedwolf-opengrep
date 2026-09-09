@@ -1,0 +1,34 @@
+[
+  {
+    "language": "powershell",
+    "revision": "e7bd348c49fdfd5c853a146a670965ba516a6239",
+    "upstream": "https://github.com/airbus-cert/tree-sitter-powershell.git",
+    "license": "MIT",
+    "generator": "tree-sitter-cli@0.27.0",
+    "abi": 14
+  },
+  {
+    "language": "groovy",
+    "revision": "deb0dcf8c4544f07564060f6e9b9f6e4b0bfc27d",
+    "upstream": "https://github.com/murtaza64/tree-sitter-groovy.git",
+    "license": "MIT",
+    "generator": "tree-sitter-cli@0.27.0",
+    "abi": 14
+  },
+  {
+    "language": "perl",
+    "revision": "c3e17b31179bf8f658c9f37c7a3ea6a202212d5a",
+    "upstream": "https://github.com/tree-sitter-perl/tree-sitter-perl.git",
+    "license": "MIT",
+    "generator": "tree-sitter-cli@0.27.0",
+    "abi": 14
+  },
+  {
+    "language": "scheme",
+    "revision": "c6cb7c7d7a04b3f5d999c28e2e9c0c31b2d50ece",
+    "upstream": "https://github.com/6cdh/tree-sitter-scheme.git",
+    "license": "MIT",
+    "generator": "tree-sitter-cli@0.27.0",
+    "abi": 14
+  }
+]

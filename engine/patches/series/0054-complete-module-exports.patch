@@ -1,0 +1,33 @@
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -70,7 +70,11 @@
+     else [("implicit", names model.implicit_modules)] in
+   let exports = if List.is_empty model.export_facts then []
+     else [("exports", `A (List_.map export model.export_facts))] in
+-  `O (implicit @ exports)
++  let complete = if List.is_empty model.complete_exports then []
++    else [("complete-exports", `A (List_.map (fun value -> `O [
++        ("module", `String value.complete_module);
++        ("symbols", names value.complete_symbols)]) model.complete_exports))] in
++  `O (implicit @ exports @ complete)
+ 
+ let rec translate_metavar_cond cond : [> `O of (string * Yaml.value) list ] =
+   match cond with
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -146,9 +146,15 @@
+   export_origin : (string * string list) option;
+ }
+ 
++and complete_module_exports = {
++  complete_module : string;
++  complete_symbols : string list;
++}
++
+ and import_model = {
+   implicit_modules : string list;
+   export_facts : import_export_fact list;
++  complete_exports : complete_module_exports list;
+ }
+ 
+ and metavar_cond_name = {

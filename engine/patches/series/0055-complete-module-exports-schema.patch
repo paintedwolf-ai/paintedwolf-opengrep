@@ -1,0 +1,31 @@
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -778,6 +778,20 @@
+         maxItems: 64
+         uniqueItems: true
+         items: {type: string, minLength: 1}
++      complete-exports:
++        type: array
++        maxItems: 64
++        items:
++          type: object
++          properties:
++            module: {type: string, minLength: 1}
++            symbols:
++              type: array
++              maxItems: 512
++              uniqueItems: true
++              items: {type: string, minLength: 1}
++          required: [module, symbols]
++          additionalProperties: false
+       exports:
+         type: array
+         maxItems: 512
+@@ -806,6 +820,7 @@
+     anyOf:
+       - required: [implicit]
+       - required: [exports]
++      - required: [complete-exports]
+     additionalProperties: false
+ 
+   metavariable-name:

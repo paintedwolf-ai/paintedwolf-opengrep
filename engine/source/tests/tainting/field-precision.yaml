@@ -1,0 +1,11 @@
+rules:
+  - id: field-precision
+    languages: [python]
+    severity: ERROR
+    message: Source reaches sink
+    mode: taint
+    pattern-sources:
+      - pattern: source()
+        exact: true
+    pattern-sinks:
+      - pattern: sink(...)

@@ -1,0 +1,202 @@
+[
+ {
+  "path": "cli/src/semgrep/semgrep_interfaces",
+  "url": "https://github.com/opengrep/semgrep-interfaces.git",
+  "revision": "5e705660dc7381d4c4c247fa83c4c5860e61d555"
+ },
+ {
+  "path": "languages/apex/tree-sitter/semgrep-apex",
+  "url": "https://github.com/opengrep/semgrep-apex.git",
+  "revision": "f2a235f997379033a8c64f0962d5ef1252629a0a"
+ },
+ {
+  "path": "languages/bash/tree-sitter/semgrep-bash",
+  "url": "https://github.com/opengrep/semgrep-bash",
+  "revision": "e6f3944f59b684b212a37bdec6b113621a1ad9ea"
+ },
+ {
+  "path": "languages/cairo/tree-sitter/semgrep-cairo",
+  "url": "https://github.com/opengrep/semgrep-cairo",
+  "revision": "3e4d0ded8fc62dbb03232193721bf6bb376bfc62"
+ },
+ {
+  "path": "languages/circom/tree-sitter/semgrep-circom",
+  "url": "https://github.com/opengrep/semgrep-circom.git",
+  "revision": "66a0ff265c38a31240162d0011190b5bdd85efd5"
+ },
+ {
+  "path": "languages/cpp/tree-sitter/semgrep-cpp",
+  "url": "https://github.com/opengrep/semgrep-cpp",
+  "revision": "8625a5341aebb93c62eb953f6a66fc1083dffe84"
+ },
+ {
+  "path": "languages/crystal/tree-sitter/opengrep-crystal",
+  "url": "https://github.com/opengrep/opengrep-crystal",
+  "revision": "f279484792c259278c4e135e8f1048bbcea7c358"
+ },
+ {
+  "path": "languages/csharp/tree-sitter/semgrep-c-sharp",
+  "url": "https://github.com/opengrep/semgrep-c-sharp",
+  "revision": "e507514adbbcd443d05deb6db78022a9aec065f2"
+ },
+ {
+  "path": "languages/dart/tree-sitter/semgrep-dart",
+  "url": "https://github.com/opengrep/semgrep-dart.git",
+  "revision": "cb3c48321fdab5485d2c1f92c99c78425543e59d"
+ },
+ {
+  "path": "languages/dockerfile/tree-sitter/semgrep-dockerfile",
+  "url": "https://github.com/opengrep/semgrep-dockerfile",
+  "revision": "e3a773f20c7fee9558529e6442e164c2cced9fb9"
+ },
+ {
+  "path": "languages/elixir/tree-sitter/semgrep-elixir",
+  "url": "https://github.com/opengrep/semgrep-elixir.git",
+  "revision": "681f90052720f4bc1c2fd2c2547771f6029917f0"
+ },
+ {
+  "path": "languages/go/tree-sitter/semgrep-go",
+  "url": "https://github.com/opengrep/semgrep-go",
+  "revision": "b36632089866c9223ce5bd31a0353627a48f50f9"
+ },
+ {
+  "path": "languages/hack/tree-sitter/semgrep-hack",
+  "url": "https://github.com/opengrep/semgrep-hack.git",
+  "revision": "f1adb0ae2b0e77a5181de5a98f55055435b0aa57"
+ },
+ {
+  "path": "languages/html/tree-sitter/semgrep-html",
+  "url": "https://github.com/opengrep/semgrep-html.git",
+  "revision": "827d34d593016cd34324f3a3b46248022cf613b6"
+ },
+ {
+  "path": "languages/java/tree-sitter/semgrep-java",
+  "url": "https://github.com/opengrep/semgrep-java",
+  "revision": "7b6cb9d41b74a6f21133cc9a9cc0a2e60ff2af6f"
+ },
+ {
+  "path": "languages/jsonnet/tree-sitter/semgrep-jsonnet",
+  "url": "https://github.com/opengrep/semgrep-jsonnet.git",
+  "revision": "a9e8d4c35acfa457e6649f4f54c467f5575e6777"
+ },
+ {
+  "path": "languages/julia/tree-sitter/semgrep-julia",
+  "url": "https://github.com/opengrep/semgrep-julia.git",
+  "revision": "31bcd2dcaa9beb1580f60c81a133037f7fad0a40"
+ },
+ {
+  "path": "languages/kotlin/tree-sitter/semgrep-kotlin",
+  "url": "https://github.com/opengrep/semgrep-kotlin.git",
+  "revision": "97203482e0aa1a88f25bfe4880fc05230524eb5a"
+ },
+ {
+  "path": "languages/lisp/tree-sitter/semgrep-clojure",
+  "url": "https://github.com/opengrep/semgrep-clojure.git",
+  "revision": "0c4985d4f26c019ca15ff5ea7b8b525f4128e0df"
+ },
+ {
+  "path": "languages/lua/tree-sitter/semgrep-lua",
+  "url": "https://github.com/opengrep/semgrep-lua",
+  "revision": "073f283a0fa4144f941199e869fd787d8e3ce338"
+ },
+ {
+  "path": "languages/move_on_aptos/tree-sitter/semgrep-move-on-aptos",
+  "url": "https://github.com/opengrep/semgrep-move-on-aptos.git",
+  "revision": "74276d40735ccb584d341144308f84c31b0384f9"
+ },
+ {
+  "path": "languages/move_on_sui/tree-sitter/semgrep-move-on-sui",
+  "url": "https://github.com/opengrep/semgrep-move-on-sui.git",
+  "revision": "f1fc8f468c21e26d0c3dfafdea7e9888bdfb97e8"
+ },
+ {
+  "path": "languages/ocaml/tree-sitter/semgrep-ocaml",
+  "url": "https://github.com/opengrep/semgrep-ocaml.git",
+  "revision": "ee015c07fc8b99250875d796da5aec0888eaa8fe"
+ },
+ {
+  "path": "languages/php/tree-sitter/semgrep-php",
+  "url": "https://github.com/opengrep/semgrep-php",
+  "revision": "0b9dd47725c12481017485d9882e375fda26e142"
+ },
+ {
+  "path": "languages/promql/tree-sitter/semgrep-promql",
+  "url": "https://github.com/opengrep/semgrep-promql.git",
+  "revision": "a6ac8bf5a35e2078b50098cbb5f64bf259c31875"
+ },
+ {
+  "path": "languages/protobuf/tree-sitter/semgrep-proto",
+  "url": "https://github.com/opengrep/semgrep-proto.git",
+  "revision": "25bae8f9d0b9f56f4914fd3d2adcee754fd241d8"
+ },
+ {
+  "path": "languages/python/tree-sitter/semgrep-python",
+  "url": "https://github.com/opengrep/semgrep-python.git",
+  "revision": "444327263390b07b66bb13c0a91848c7767d9af2"
+ },
+ {
+  "path": "languages/ql/tree-sitter/semgrep-ql",
+  "url": "https://github.com/opengrep/semgrep-ql",
+  "revision": "853a990a50b71f0ca24e3732dccff5c8c54e874d"
+ },
+ {
+  "path": "languages/r/tree-sitter/semgrep-r",
+  "url": "https://github.com/opengrep/semgrep-r",
+  "revision": "2c556b67422a627e0325589f71fc1394b5750c98"
+ },
+ {
+  "path": "languages/ruby/tree-sitter/semgrep-ruby",
+  "url": "https://github.com/opengrep/semgrep-ruby.git",
+  "revision": "bf09252137a27dc29a8d9da82d4d5a4527bda46b"
+ },
+ {
+  "path": "languages/rust/tree-sitter/semgrep-rust",
+  "url": "https://github.com/opengrep/semgrep-rust",
+  "revision": "fb6c73fbe4f34592fbbd0ce0f825e224533d47e7"
+ },
+ {
+  "path": "languages/solidity/tree-sitter/semgrep-solidity",
+  "url": "https://github.com/opengrep/semgrep-solidity.git",
+  "revision": "e101c0c6c8c86bd5ff02f1d3a737cb3e3bebe498"
+ },
+ {
+  "path": "languages/swift/tree-sitter/semgrep-swift",
+  "url": "https://github.com/opengrep/semgrep-swift.git",
+  "revision": "61d1550d1b4aee70f7e00457d3121e4f1d3c0d47"
+ },
+ {
+  "path": "languages/terraform/tree-sitter/semgrep-hcl",
+  "url": "https://github.com/opengrep/semgrep-hcl",
+  "revision": "e42e9d924de848c784e4ab46c571bff5145d245e"
+ },
+ {
+  "path": "languages/typescript/tree-sitter/semgrep-tsx",
+  "url": "https://github.com/opengrep/semgrep-tsx",
+  "revision": "a5799ce5d762168fe17c94b86ad5f77ee13d2138"
+ },
+ {
+  "path": "languages/typescript/tree-sitter/semgrep-typescript",
+  "url": "https://github.com/opengrep/semgrep-typescript",
+  "revision": "6c288cd9c2fecf05556be02d540814aa5456ad2b"
+ },
+ {
+  "path": "libs/ocaml-tree-sitter-core",
+  "url": "https://github.com/opengrep/ocaml-tree-sitter-core.git",
+  "revision": "1392efc21e60d5acde72d0d1c6586f5692fedace"
+ },
+ {
+  "path": "libs/pcre2",
+  "url": "https://github.com/semgrep/pcre2-ocaml",
+  "revision": "4e0a44486bb518b7a24ca11286c4b03a8d51e17e"
+ },
+ {
+  "path": "libs/testo",
+  "url": "https://github.com/semgrep/testo.git",
+  "revision": "99a0d4f08d9cbabc87d10da94a534ce8a1220cd9"
+ },
+ {
+  "path": "tests/semgrep-rules",
+  "url": "https://github.com/semgrep/semgrep-rules.git",
+  "revision": "f0a382de1184139c5a356eb64ccd9bdfcc8ce526"
+ }
+]

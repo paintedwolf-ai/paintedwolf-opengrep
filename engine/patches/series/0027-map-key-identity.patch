@@ -1,0 +1,407 @@
+--- a/languages/javascript/menhir/parser_js.mly
++++ b/languages/javascript/menhir/parser_js.mly
+@@ -1473,6 +1473,8 @@
+       let s' =
+         match Common2.float_of_string_opt s with
+         | None -> s
++        | Some n when Float.is_integer n && Float.abs n <= 9007199254740991. ->
++            Printf.sprintf "%.0f" n
+         | Some n -> string_of_float n
+       in
+       (s', t)
+--- a/languages/typescript/tree-sitter/Parse_typescript_tree_sitter.ml
++++ b/languages/typescript/tree-sitter/Parse_typescript_tree_sitter.ml
+@@ -140,6 +140,8 @@
+   let num_str =
+     match opt_num with
+     | None -> s
++    | Some n when Float.is_integer n && Float.abs n <= 9007199254740991. ->
++        Printf.sprintf "%.0f" n
+     | Some n -> string_of_float n
+   in
+   (num_str, t)
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -431,21 +431,8 @@
+       inner
+   | _ -> p
+ 
+-(* Build a field [Dot] offset from a map-pair key pattern. Returns [None]
+- * for opaque keys — callers fall back to binding the value without a key
+- * projection, losing field-sensitivity for that leaf.
+- *
+- * The [OtherPat((":"|"::"), …)] branches below recognise the Clojure
+- * parser's encoding of atom keys; no other parser emits that tag.
+- * Clojure distinguishes [:body] (plain keyword) from [::body]
+- * (auto-resolved namespaced keyword) — they denote different runtime
+- * atoms and must produce different offsets. [G.Atom] cannot currently
+- * carry that distinction, so we reconstruct the surface form
+- * [":body"] / [":body"] from the tag prefix. If [G.Atom] is later
+- * extended with a "kind" field, this handling can collapse into the
+- * [PatLiteral (G.Atom …)] branch — option (3) in the design
+- * discussion. *)
+-let key_offset_of_pattern (key_pat : G.pattern) : offset option =
++(* Keyword prefixes and string-key contents retain their distinct identities. *)
++let key_offset_of_pattern lang (key_pat : G.pattern) : offset option =
+   let mk_dot (s, tok) =
+     {
+       o =
+@@ -460,6 +447,8 @@
+   let stripped (s, tok) = (String_.strip_wrapping_char ':' s, tok) in
+   match key_pat with
+   | G.PatId (id, _) -> Some (mk_dot (stripped id))
++  | G.PatLiteral (G.String _ as literal) when lang =*= Lang.Clojure ->
++      Some { o = Index (mk_e (Literal literal) NoOrig); oorig = NoOrig }
+   | G.PatLiteral (G.String (_, id, _)) -> Some (mk_dot (stripped id))
+   | G.PatLiteral (G.Atom (_, id)) -> Some (mk_dot (stripped id))
+   | G.OtherPat ((((":" | "::") as prefix), _), [ G.Name (G.Id (id, _)) ]) ->
+@@ -693,7 +682,7 @@
+        * The common case (multiple pairs inside a [PatList]) takes the
+        * map-pair branch of the [PatList] handler above. *)
+       let tok =
+-        match key_offset_of_pattern key_pat with
++        match key_offset_of_pattern env.lang key_pat with
+         | Some { o = Dot { ident = _, t; _ }; _ } -> t
+         | _ -> Tok.unsafe_fake_tok "_patkv"
+       in
+@@ -701,7 +690,7 @@
+       let tmp_lval = lval_of_base (Var tmp) in
+       let eorig = Related (G.P val_pat) in
+       let ss =
+-        match key_offset_of_pattern key_pat with
++        match key_offset_of_pattern env.lang key_pat with
+         | Some offset_i ->
+             let lval_i = { base = Var tmp; rev_offset = [ offset_i ] } in
+             pattern_assign_statements env
+@@ -821,7 +810,7 @@
+ and map_pair_assign_stmts env tmp (pat : G.pattern) : stmt list =
+   match unwrap_map_pair_pattern pat with
+   | G.PatKeyVal (key_pat, val_pat) -> (
+-      match key_offset_of_pattern key_pat with
++      match key_offset_of_pattern env.lang key_pat with
+       | Some offset_i ->
+           let eorig = Related (G.P pat) in
+           let lval_i = { base = Var tmp; rev_offset = [ offset_i ] } in
+@@ -1380,7 +1369,8 @@
+       ([], mk_e (Literal (G.Atom (tok, id))) eorig)
+   | G.OtherExpr (("Atom", tok), [G.Name name]) when env.lang =*= Lang.Clojure ->
+       let atom = match name with G.Id (id, _) -> id | G.IdQualified qualified -> fst qualified.G.name_last in
+-      ([], mk_e (Literal (G.Atom (tok, atom))) eorig)
++      ([], Option.value ~default:(mk_e (Literal (G.Atom (tok, atom))) eorig)
++             (clojure_atom_key_literal g_expr))
+   | G.Call
+       ( { e = G.IdSpecial (G.Op ((G.And | G.Or) as op), tok); _ },
+         (_, arg0 :: args, _) )
+@@ -3340,18 +3330,7 @@
+   ( ss_recv @ [ read_prior; if_stmt ], mk_e (Fetch prior_tmp) eorig )
+ 
+ and clojure_atom_key_literal (e : G.expr) : exp option =
+-  (* When [env.lang] is Clojure, a map-literal key like [:body] or
+-   * [::body] arrives here as [OtherExpr("Atom", [Name IdQualified
+-   * {name_middle = Some (QDots [(prefix, _)]); name_last = (s, tok)}])],
+-   * where [prefix] is [":" / "::"] — the auto-resolved-namespace
+-   * marker — and [s] carries the atom's surface text (still prefixed
+-   * with a [:]). We need [:body] and [::body] to produce distinct
+-   * [Ostr] offsets downstream so field-sensitive taint can tell them
+-   * apart; emit a [String] literal whose text is [prefix ^ bare] so
+-   * that [:body] stays [":body"] and [::body] stays ["::body"].
+-   * [G.Atom] cannot currently carry the [:]/[::] distinction, hence
+-   * the bespoke path here — see the comment on
+-   * [key_offset_of_pattern] for the matching pattern-side. *)
++  (* Retain the keyword prefix in its atom payload. *)
+   match e.G.e with
+   | G.OtherExpr
+       ( ("Atom", _),
+@@ -3368,7 +3347,7 @@
+       let bare = String_.strip_wrapping_char ':' s in
+       Some
+         (mk_e
+-           (Literal (G.String (Tok.unsafe_fake_bracket (prefix ^ bare, tok))))
++           (Literal (G.Atom (tok, (prefix ^ bare, tok))))
+            (SameAs e))
+   | _ -> None
+ 
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -695,7 +695,13 @@
+ let effects_of_tainted_sinks env ?(shape = S.Bot) taints sinks : Effect.t list =
+   sinks
+   |> List.concat_map (fun sink ->
+-         let offsets = List_.map (function R.ValueIndex i -> T.Oint i | R.ValueField field -> T.Ostr field) sink.Effect.rule_sink.R.sink_value_path in
++         let offsets =
++           List_.map
++             (function
++               | R.ValueIndex i -> T.Oint i
++               | R.ValueField field -> T.model_field_offset env.taint_inst.lang field)
++             sink.Effect.rule_sink.R.sink_value_path
++         in
+          let selected_taints =
+            match Shape.find_in_shape_poly ~taints offsets shape with
+            | None -> Taints.empty
+@@ -1855,7 +1861,7 @@
+                      ((lval_env, taints_acc), `Entry (ke, ve_taints, ve_shape)))
+                (env.lval_env, Taints.empty)
+         in
+-        let record_shape = Shape.record_or_dict_like_obj taints_and_shapes in
++        let record_shape = Shape.record_or_dict_like_obj ~lang:env.taint_inst.lang taints_and_shapes in
+         (taints, record_shape, lval_env)
+     | Cast (_, e) -> check env e
+   in
+@@ -3277,33 +3283,26 @@
+       id_info = G.empty_id_info (); value_origin = None }
+   in
+   let stripped (s, tok) = (String_.strip_wrapping_char ':' s, tok) in
+-  (* The [OtherPat((":"|"::"), …)] branches below match the Clojure
+-   * parser's atom-key encoding; [:body] and [::body] denote distinct
+-   * runtime atoms and must produce distinct offsets. [G.Atom] cannot
+-   * currently carry the [:]/[::] distinction, so we reconstruct the
+-   * surface form from the tag prefix. Mirrors the handling in
+-   * [AST_to_IL.key_offset_of_pattern]; if [G.Atom] is later extended
+-   * with a kind, this branch collapses into the [PatLiteral (G.Atom
+-   * …)] branch. *)
++  (* Destructuring follows the same key identity as ordinary lookups. *)
+   let ofld_of_key_pat (key_pat : G.pattern) : Taint.offset option =
+     match key_pat with
+     | G.PatId (id, _) -> Some (Taint.Ofld (mk_field (stripped id)))
++    | G.PatLiteral (G.String (_, id, _)) when lang =*= Lang.Clojure ->
++        Some (Taint.Ostr (fst id))
+     | G.PatLiteral (G.String (_, id, _)) ->
+         Some (Taint.Ofld (mk_field (stripped id)))
+     | G.PatLiteral (G.Atom (_, id)) ->
+         Some (Taint.Ofld (mk_field (stripped id)))
+     | G.OtherPat ((((":" | "::") as prefix), _), [ G.Name (G.Id (id, _)) ]) ->
+-        let s, tok = id in
++        let s, _tok = id in
+         Some
+-          (Taint.Ofld
+-             (mk_field (prefix ^ String_.strip_wrapping_char ':' s, tok)))
++          (Taint.model_field_offset lang (prefix ^ String_.strip_wrapping_char ':' s))
+     | G.OtherPat
+         ( (((":" | "::") as prefix), _),
+           [ G.Name (G.IdQualified { name_last = (id, _); _ }) ] ) ->
+-        let s, tok = id in
++        let s, _tok = id in
+         Some
+-          (Taint.Ofld
+-             (mk_field (prefix ^ String_.strip_wrapping_char ':' s, tok)))
++          (Taint.model_field_offset lang (prefix ^ String_.strip_wrapping_char ':' s))
+     | _ -> None
+   in
+   let unwrap_map_pair (p : G.pattern) : G.pattern =
+--- a/src/tainting/Shape_and_sig.ml
++++ b/src/tainting/Shape_and_sig.ml
+@@ -32,6 +32,9 @@
+      with string keys. *)
+   let compare (o1 : t) (o2 : t) =
+     match (o1, o2) with
++    | Oatom a, Oatom b -> String.compare a b
++    | Oatom _, _ -> -1
++    | _, Oatom _ -> 1
+     | Ofld fld1, Ofld fld2 -> String.compare (fst fld1.ident) (fst fld2.ident)
+     | Ostr str1, Ostr str2 -> String.compare str1 str2
+     | Ofld fld1, Ostr str2 -> String.compare (fst fld1.ident) str2
+--- a/src/tainting/Sig_inst.ml
++++ b/src/tainting/Sig_inst.ml
+@@ -1298,7 +1298,7 @@
+           match tlval.offset with
+           | Ofld var :: offset -> Some (var, offset, snd method_.ident)
+           | []
+-          | (Oint _ | Ostr _ | Oslice _ | Oany) :: _ ->
++          | (Oint _ | Ostr _ | Oatom _ | Oslice _ | Oany) :: _ ->
+               (* we have no 'var' to take here *)
+               log_error ();
+               None)
+@@ -1429,7 +1429,7 @@
+             match offset with
+             | [] -> Some (`Var var, offset)
+             | Ofld var :: offset -> Some (`Var var, offset)
+-            | (Oint _ | Ostr _ | Oslice _ | Oany) :: _ -> None)
++            | (Oint _ | Ostr _ | Oatom _ | Oslice _ | Oany) :: _ -> None)
+         | __else__ -> None)
+     | BGlob var -> Some (`Var var, offset)
+   in
+--- a/src/tainting/Taint.ml
++++ b/src/tainting/Taint.ml
+@@ -141,6 +141,7 @@
+ type offset =
+   | Ofld of IL.name
+   | Oint of int
++  | Oatom of string
+   | Ostr of string
+   | Oslice of int
+   | Oany
+@@ -166,6 +167,7 @@
+   match offset with
+   | Ofld n -> "." ^ fst n.IL.ident
+   | Oint i -> Printf.sprintf "[%d]" i
++  | Oatom s -> Printf.sprintf "[atom %s]" s
+   | Ostr s -> Printf.sprintf "[%s]" s
+   | Oslice n -> Printf.sprintf "[%d..]" n
+   | Oany -> "[*]"
+@@ -175,8 +177,20 @@
+ 
+ let show_lval { base; offset } = show_base base ^ show_offset_list offset
+ 
++let canonical_integer_property s =
++  match int_of_string_opt s with
++  | Some i when string_of_int i = s && int_of_float (float_of_int i) =|= i -> Some i
++  | _ -> None
++
+ let rec offset_of_IL lang (o : IL.offset) =
+ match o.o with
++| IL.Dot n
++  when lang =*= Lang.Clojure && String.starts_with ~prefix:":" (fst n.ident) ->
++    Oatom (fst n.ident)
++| IL.Dot n when Lang.is_js lang -> (
++    match canonical_integer_property (fst n.ident) with
++    | Some i -> Oint i
++    | None -> Ofld n)
+ | IL.Dot n -> Ofld n
+ | IL.Index { e = IL.Literal (Int pi); _ } -> (
+     match Parsed_int.to_int_opt pi with
+@@ -205,13 +219,12 @@
+  * Python `d[0]` and `d["0"]` really are different dict keys. *)
+ | IL.Index { e = IL.Literal (String (_, (s, _), _)); _ }
+   when Lang.is_js lang -> (
+-    match int_of_string_opt s with
+-    | Some i when string_of_int i = s && int_of_float (float_of_int i) =|= i
+-      ->
+-        Oint i
++    match canonical_integer_property s with
++    | Some i -> Oint i
+     | _ -> Ostr s)
+ | IL.Index { e = IL.Literal (String (_, (s, _), _)); _ } -> Ostr s
+-| IL.Index { e = IL.Literal (Atom (_, (s, _))); _ } -> Ostr s
++| IL.Index { e = IL.Literal (Atom (_, (s, _))); _ } ->
++    if lang =*= Lang.Clojure then Oatom s else Ostr s
+ | IL.Index { e = IL.Fetch { base = IL.Var name; rev_offset = [] }; _ } -> (
+     match !(name.id_info.id_svalue) with
+     | Some (G.Lit literal) ->
+@@ -220,6 +233,14 @@
+     | _ -> Oany)
+ | IL.Index _ -> Oany
+ | IL.Slice n -> Oslice n
++
++let model_field_offset lang field =
++  if lang =*= Lang.Clojure && String.starts_with ~prefix:":" field then Oatom field
++  else
++    let tok = Tok.unsafe_fake_tok field in
++    let key = IL.{ e = Literal (G.String (Tok.unsafe_fake_bracket (field, tok)));
++                   eorig = NoOrig } in
++    offset_of_IL lang IL.{ o = Index key; oorig = NoOrig }
+ 
+ let offset_of_rev_IL_offset lang ~rev_offset =
+   List.rev_map (offset_of_IL lang) rev_offset
+@@ -240,6 +261,12 @@
+                      };
+                  oorig = NoOrig;
+                }
++         | Oatom s ->
++             let tok = Tok.unsafe_fake_tok s in
++             Some IL.{
++               o = Index { e = Literal (G.Atom (tok, (s, tok))); eorig = NoOrig };
++               oorig = NoOrig;
++             }
+          | Ostr s ->
+              Some
+                {
+--- a/src/tainting/Taint.mli
++++ b/src/tainting/Taint.mli
+@@ -48,6 +48,7 @@
+ type offset =
+   | Ofld of IL.name  (** A field, like `.a` *)
+   | Oint of int  (** A constant integer index, like `[42]` *)
++  | Oatom of string
+   | Ostr of string  (** A constant string index, like `['foo']` *)
+   | Oslice of int
+       (** Trailing rest of a list/tuple from index [n], like `[n..]`.
+@@ -62,6 +63,7 @@
+ val show_offset : offset -> string
+ val show_offset_list : offset list -> string
+ val offset_of_IL : Lang.t -> IL.offset -> offset
++val model_field_offset : Lang.t -> string -> offset
+ (** The [Lang.t] matters for JS/TS only, where an integer index and its
+     canonical decimal string spelling denote the same property and are
+     conflated into [Oint]. Pass the language of the file under analysis
+--- a/src/tainting/Taint_shape.ml
++++ b/src/tainting/Taint_shape.ml
+@@ -153,7 +153,7 @@
+          | _, Oany ->
+             (* Cannot handle this offset. *)
+             taints
+-         | __any__, ((Ofld _ | Ostr _ | Oint _ | Oslice _) as o) ->
++         | __any__, ((Ofld _ | Oatom _ | Ostr _ | Oint _ | Oslice _) as o) ->
+             (* Not a method call (to the best of our knowledge) or
+              * an unresolved Java `getX` method. *)
+              taints
+@@ -400,25 +400,17 @@
+   (* See INVARIANT(cell) *)
+   if array then Array obj else if Fields.is_empty obj then Bot else Obj obj
+ 
+-let record_or_dict_like_obj taints_and_shapes : shape =
++let record_or_dict_like_obj ~lang taints_and_shapes : shape =
+   let obj =
+     taints_and_shapes
+     |> List.fold_left
+          (fun obj field ->
+            match field with
+            | `Field (name, taints, shape) ->
+-               add_field_to_obj_check_invariant obj (T.Ofld name) taints shape
++               add_field_to_obj_check_invariant obj
++                 (T.offset_of_IL lang IL.{ o = Dot name; oorig = NoOrig }) taints shape
+            | `Entry (e, taints, shape) ->
+-               let offset =
+-                 match e.IL.e with
+-                 | Literal (Int pi) -> (
+-                     match Parsed_int.to_int_opt pi with
+-                     | None -> T.Oany
+-                     | Some i -> T.Oint i)
+-                 | Literal (String (_, (s, _), _)) -> Ostr s
+-                 | Literal (Atom (_, (s, _))) -> Ostr s
+-                 | __else__ -> T.Oany
+-               in
++               let offset = T.offset_of_IL lang IL.{ o = Index e; oorig = NoOrig } in
+                add_field_to_obj_check_invariant obj offset taints shape
+            | `Spread shape -> (
+                match shape with
+@@ -600,6 +592,7 @@
+                       Some (T.Oslice (n - m) :: offset)
+                   | Oint _
+                   | Ofld _
++                  | Oatom _
+                   | Ostr _
+                   | Oany ->
+                       None
+@@ -621,6 +614,7 @@
+           | Some cell -> `Found cell)
+       | Ofld _
+       | Oint _
++      | Oatom _
+       | Ostr _ -> (
+           match Fields.find_opt o obj with
+           | Some o_cell -> find_in_cell_w_carry ~taints offset o_cell
+@@ -745,12 +739,14 @@
+                     update_offset_in_cell ~f (T.Oslice (n - m) :: offset) cell
+                 | Oint _
+                 | Ofld _
++                | Oatom _
+                 | Ostr _
+                 | Oany ->
+                     Some cell)
+               obj
+         | Ofld _
+         | Oint _
++        | Oatom _
+         | Ostr _ ->
+             obj
+             |> Fields.update o (fun opt_cell ->
+--- a/src/tainting/Taint_shape.mli
++++ b/src/tainting/Taint_shape.mli
+@@ -19,6 +19,7 @@
+ 
+ (* THINK: Replace polymorphic variant with a parameterized IL.field_or_entry ? *)
+ val record_or_dict_like_obj :
++  lang:Lang.t ->
+   [< `Entry of IL.exp * Taint.taints * shape
+   | `Field of IL.name * Taint.taints * shape
+   | `Spread of shape ]

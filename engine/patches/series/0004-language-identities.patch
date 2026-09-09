@@ -1,0 +1,87 @@
+diff --git a/cli/src/semgrep/semgrep_types.py b/cli/src/semgrep/semgrep_types.py
+index 330b0be..7a204d2 100644
+--- a/cli/src/semgrep/semgrep_types.py
++++ b/cli/src/semgrep/semgrep_types.py
+@@ -46,6 +46,7 @@ class LanguageDefinition:
+     id: Language
+     name: str
+     keys: Collection[str]
++    filenames: Collection[str]
+     exts: Collection[FileExtension]
+     reverse_exts: Collection[str]
+     shebangs: Collection[Shebang]
+@@ -59,6 +60,7 @@ class LanguageDefinition:
+             id=Language(data["id"]),
+             name=data["name"],
+             keys=data["keys"],
++            filenames=data["filenames"],
+             exts=data["exts"],
+             reverse_exts=data["reverse_exts"]
+             if data["reverse_exts"] is not None
+diff --git a/cli/src/semgrep/target_manager.py b/cli/src/semgrep/target_manager.py
+index b46131f..0f9af70 100644
+--- a/cli/src/semgrep/target_manager.py
++++ b/cli/src/semgrep/target_manager.py
+@@ -714,7 +714,8 @@ class TargetManager:
+             kept = frozenset(
+                 path
+                 for path in candidates
+-                if any(str(path).endswith(ext) for ext in language.definition.exts)
++                if path.name in language.definition.filenames
++                or any(str(path).endswith(ext) for ext in language.definition.exts)
+                 or self.executes_with_shebang(path, language.definition.shebangs)
+             )
+         else:
+diff --git a/src/rule/Lang.ml b/src/rule/Lang.ml
+index eb032e6..6a70e92 100644
+--- a/src/rule/Lang.ml
++++ b/src/rule/Lang.ml
+@@ -41,6 +41,9 @@ module FT = File_type
+    expressions don't match.
+ *)
+ type t = Language.t =
++  | Groovy
++  | Powershell
++  | Perl
+   | Apex
+   | Bash
+   | C
+@@ -110,7 +113,7 @@ let is_c_cpp lang =
+ 
+ let is_caseless lang =
+   match lang with
+-  | Vb -> true
++  | Vb | Powershell -> true
+   | _ -> false
+ 
+ (*****************************************************************************)
+@@ -203,6 +206,7 @@ let to_capitalized_alnum lang = show lang
+ *)
+ let ext_of_lang lang = (info lang).exts
+ let excluded_exts_of_lang lang = (info lang).excluded_exts
++let filenames_of_lang lang = (info lang).filenames
+ let shebangs_of_lang lang = (info lang).shebangs
+ 
+ let unsupported_language_message lang =
+diff --git a/src/rule/Lang.mli b/src/rule/Lang.mli
+index 9e355bb..7ed9f2b 100644
+--- a/src/rule/Lang.mli
++++ b/src/rule/Lang.mli
+@@ -15,6 +15,9 @@
+ *)
+ 
+ type t = Language.t =
++  | Groovy
++  | Powershell
++  | Perl
+   | Apex
+   | Bash
+   | C
+@@ -128,6 +131,7 @@ val excluded_exts_of_lang : t -> string list
+ (*
+    Return a list of programs that can run a script written in this language.
+ *)
++val filenames_of_lang : t -> string list
+ val shebangs_of_lang : t -> string list
+ 
+ (* See also Find_target.files_of_dirs_or_files *)

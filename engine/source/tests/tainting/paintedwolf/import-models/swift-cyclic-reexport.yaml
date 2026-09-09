@@ -1,0 +1,53 @@
+{
+  "rules": [
+    {
+      "id": "origin",
+      "languages": [
+        "swift"
+      ],
+      "message": "Modeled import identity",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "func $H(..., $R: $TYPE, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "Foundation",
+            "symbol": [
+              "Process"
+            ],
+            "imports": {
+              "exports": [
+                {
+                  "module": "Vapor",
+                  "symbol": "Process",
+                  "origin": {
+                    "module": "Foundation",
+                    "symbol": [
+                      "Process"
+                    ]
+                  }
+                },
+                {
+                  "module": "Foundation",
+                  "symbol": "Process",
+                  "origin": {
+                    "module": "Vapor",
+                    "symbol": [
+                      "Process"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "focus-metavariable": "$R"
+        }
+      ]
+    }
+  ]
+}

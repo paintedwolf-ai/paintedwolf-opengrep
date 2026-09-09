@@ -1,0 +1,22 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "model_type_unresolved",
+    "line": 7
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "model_type_unresolved",
+    "line": 33
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "model_type_unresolved",
+    "line": 9
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "model_type_unresolved",
+    "line": 39
+  }
+]

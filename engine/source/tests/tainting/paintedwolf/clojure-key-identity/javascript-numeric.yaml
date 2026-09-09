@@ -1,0 +1,18 @@
+rules:
+- id: flow
+  languages:
+  - javascript
+  severity: ERROR
+  message: Selected root receives input
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE
+    value-path:
+    - '0'
+  options:
+    taint_intrafile: false

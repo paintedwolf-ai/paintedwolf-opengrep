@@ -1,0 +1,282 @@
+--- a/languages/swift/generic/Parse_swift_tree_sitter.ml
++++ b/languages/swift/generic/Parse_swift_tree_sitter.ml
+@@ -562,18 +562,8 @@
+    * Swift compiler no longer accepts these, but some very old code still uses
+    * it." *)
+   let _ = v5 in
+-  (* Swift allows you to declare custom operators. The operator declaration just
+-   * introduces the operator and specifies whether it is a prefix, infix, or
+-   * postfix operator, as well as optionally allows a precedence declaration.
+-   * Defining the actual behavior of an operator is done in another construct.
+-   *
+-   * Hopefully we can get good enough results without tracking the precedence
+-   * and fixity of every custom operator and using that to inform parsing.
+-   *
+-   * https://docs.swift.org/swift-book/LanguageGuide/AdvancedOperators.html#ID46
+-   *)
+   let anys = [ v1; v3 ] @ Option.to_list v4 |> List_.map (fun x -> G.I x) in
+-  G.OtherStmt (G.OS_Todo, anys) |> G.s
++  G.DirectiveStmt { G.d = G.OtherDirective (("SwiftOperatorDeclaration", snd v3), anys); d_attrs = [] } |> G.s
+ 
+ let map_identifier (env : env) ((v1, v2) : CST.identifier) =
+   let v1 = map_simple_identifier env v1 in
+@@ -1602,19 +1592,21 @@
+ and map_throws_opt env v = Option.map (map_throws env) v |> Option.to_list
+ 
+ and map_function_type (env : env) ((v1, v2, v3, v4, v5) : CST.function_type) =
+-  let v1 =
++  let parameters =
+     match v1 with
+-    | `Tuple_type x -> map_tuple_type env x
+-    | `Unan_type x -> map_unannotated_type env x
+-  in
+-  let attrs =
+-    let v2 = map_async_keyword_opt env v2 in
+-    let v3 = map_throws_opt env v3 in
+-    v2 @ v3
+-  in
+-  let _v4TODO = (* arrow_operator_custom *) token env v4 in
+-  let v5 = map_type_ env v5 in
+-  G.TyFun ([ G.Param (G.param_of_type ~pattrs:attrs v1) ], v5) |> G.t
++    | `Tuple_type (_, items, _) ->
++        let items = match items with
++          | None -> []
++          | Some (first, rest) -> first :: List.map snd rest in
++        List.map (fun (name, modifiers, type_) ->
++          let pname = Option.map (map_tuple_type_item_identifier env) name in
++          let pattrs = map_parameter_modifiers_opt env modifiers in
++          G.Param (G.param_of_type ?pname ~pattrs (map_type_ env type_))) items
++    | `Unan_type type_ -> [G.Param (G.param_of_type (map_unannotated_type env type_))]
++  in
++  let attrs = map_async_keyword_opt env v2 @ map_throws_opt env v3 in
++  let _arrow = token env v4 in
++  { (G.TyFun (parameters, map_type_ env v5) |> G.t) with G.t_attrs = attrs }
+ 
+ and map_function_value_parameter (env : env)
+     ((v1, v2, v3) : CST.function_value_parameter) : G.parameter =
+@@ -1969,7 +1961,6 @@
+     | None -> ([], fb [], None)
+   in
+   let body =
+-    (* TODO model implicit return for single-statement closures *)
+     let stmts = Option.map (map_statements env) v3 |> List_.optlist_to_list in
+     (* Fake brackets here since the brackets delimit the lambda expression as a
+      * whole, not just the statements *)
+--- a/libs/ast_generic/AST_generic.ml
++++ b/libs/ast_generic/AST_generic.ml
+@@ -665,11 +665,20 @@
+    * making facts opaque here to prevent slowing down tests that prints
+    * expressions for debugging purposes.
+    *)
++  mutable operator_resolution : operator_resolution option;
++      [@equal fun _a _b -> true] [@hash.ignore] [@opaque]
+   mutable facts : facts; [@equal fun _a _b -> true] [@hash.ignore] [@opaque]
+ }
+ 
+ and fact = Equal of name * expr | NotEqual of name * expr
+ and facts = fact list
++
++and operator_resolution =
++  | NativeOperator
++  | DeclaredOperator of name * operator_argument_evaluation list
++  | UnresolvedOperator
++
++and operator_argument_evaluation = EagerArgument | AutoclosureArgument
+ 
+ and expr_kind =
+   (* basic (atomic) values *)
+@@ -2243,6 +2252,7 @@
+     e_id = 0;
+     e_range = None;
+     is_implicit_return = false;
++    operator_resolution = None;
+     facts = [];
+   }
+ 
+@@ -2604,6 +2614,7 @@
+      *)
+     method! visit_fact _env _fact = ()
+     method! visit_facts _env _facts = ()
++    method! visit_operator_resolution _env _resolution = ()
+   end
+ 
+ (* This is based on the legacy behavior of Map_AST.mk_visitor (look through the
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -1459,10 +1459,36 @@
+       let atom = match name with G.Id (id, _) -> id | G.IdQualified qualified -> fst qualified.G.name_last in
+       ([], Option.value ~default:(mk_e (Literal (G.Atom (tok, atom))) eorig)
+              (clojure_atom_key_literal g_expr))
++  | G.Call ({ e = G.IdSpecial (G.Op _, tok); _ }, (left, arguments, right))
++    when env.lang =*= Lang.Swift
++         && (match g_expr.operator_resolution with Some (G.DeclaredOperator _) -> true | _ -> false) ->
++      let name, modes = match g_expr.operator_resolution with
++        | Some (G.DeclaredOperator (name, modes)) -> (name, modes)
++        | _ -> impossible (G.E g_expr) in
++      let name = match name with
++        | G.Id ((spelling, _), info) -> G.Id ((spelling, tok), info)
++        | name -> name in
++      let arguments = List.map2 (fun mode argument ->
++        match mode, argument with
++        | G.AutoclosureArgument, G.Arg value ->
++            G.Arg (G.Lambda { G.fkind=(G.LambdaKind, tok); fparams=(tok, [], tok);
++              frettype=None; fbody=G.FBExpr value } |> G.e)
++        | _ -> argument) modes arguments in
++      expr env ~void {g_expr with G.e=G.Call (G.N name |> G.e, (left, arguments, right))}
++  | G.Call ({ e = G.IdSpecial (G.Op _, tok); _ }, (_, arguments, _))
++    when env.lang =*= Lang.Swift
++         && (match g_expr.operator_resolution with Some G.UnresolvedOperator -> true | _ -> false) ->
++      let values = List.map (function
++        | G.Arg value | G.ArgKwd (_, value) -> G.E value
++        | argument -> G.Ar argument) arguments in
++      expr env ~void {g_expr with G.e=G.OtherExpr (("SwiftOperatorResolution", tok), values)}
+   | G.Call
+       ( { e = G.IdSpecial (G.Op ((G.And | G.Or) as op), tok); _ },
+         (_, arg0 :: args, _) )
+-    -> expr_lazy_op env op tok arg0 args eorig
++    ->
++      let boolean_semantics = env.lang =*= Lang.Swift
++        && (match g_expr.operator_resolution with Some G.NativeOperator -> true | _ -> false) in
++      expr_lazy_op ~boolean_semantics env op tok arg0 args eorig
+   | G.Call ({ e = G.IdSpecial (G.Op op, tok); _ }, args) -> (
+       match op with
+       | op when (op =*= G.Elvis && (env.lang =*= Lang.Kotlin || env.lang =*= Lang.Csharp))
+@@ -3821,6 +3847,7 @@
+   | G.EN name -> lval env (G.N name |> G.e)
+   | G.EDynamic eorig -> lval env eorig
+   | G.EPattern (PatId (id, id_info)) -> lval env (G.N (Id (id, id_info)) |> G.e)
++  | G.EPattern (PatWildcard tok) -> ([], fresh_lval tok)
+   (* Why not more here, if we are to support more patterns? *)
+   | G.EPattern _ -> (
+       let any = G.En ent in
+@@ -4208,7 +4235,7 @@
+       (* We want to analyze any expressions in 'ty'. *)
+       let ss, _ = type_ env ty in
+       ss
+-  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || List.mem env.lang [Lang.Clojure; Lang.Scheme] ->
++  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || List.mem env.lang [Lang.Clojure; Lang.Scheme; Lang.Swift] ->
+       (* Function values retain their closure identity at callback use sites. *)
+       let ss_lv, lv = lval_of_ent env ent in
+       let il_fdef =
+@@ -4721,7 +4748,10 @@
+ 
+ and function_body env fbody : stmts =
+   match env.lang, fbody with
+-  | Lang.Scheme, G.FBExpr value -> implicit_return env value G.sc
++  | (Lang.Scheme | Lang.Swift), G.FBExpr value -> implicit_return env value G.sc
++  | Lang.Swift, G.FBStmt { s = G.Block (_, [{s = G.ExprStmt (value, tok); _}], _); _ }
++      when value.G.is_implicit_return ->
++      implicit_return env value tok
+   | _ ->
+       let body_stmt = H.funcbody_to_stmt fbody in
+       stmt env body_stmt
+--- a/src/analyzing/Eval_generic_partial.ml
++++ b/src/analyzing/Eval_generic_partial.ml
+@@ -207,6 +207,9 @@
+           Some (Lit str_lit))
+   | Call ({ e = IdSpecial (InterpolatedElement, _); _ }, (_, [ Arg e ], _)) ->
+       eval env e
++  | Call ({ e = IdSpecial (Op _, _); _ }, _)
++    when (match x.operator_resolution with
++      | Some (G.DeclaredOperator _ | G.UnresolvedOperator) -> true | _ -> false) -> None
+   | Call ({ e = IdSpecial special; _ }, args) -> eval_special env special args
+   | Call ({ e = N name; _ }, args) -> eval_call env name args
+   | Call (({ e = DotAccess (_, _, FN (Id _)); _ } as e), args) ->
+--- a/src/analyzing/Implicit_return.ml
++++ b/src/analyzing/Implicit_return.ml
+@@ -111,7 +111,7 @@
+          match fkind with
+          | __any__ when lang_supports_implicit_return lang ->
+              mark_implicit_return_fdef lang ~tok fdef
+-         | LambdaKind ->
++         | LambdaKind when not (Lang.equal lang Lang.Swift) ->
+              (* Lambdas expressions tend to always support implicit returns,
+               * even in languages that require explicit returns like Java. *)
+              mark_implicit_return_fdef lang ~tok fdef
+--- a/src/engine/Eval_generic.ml
++++ b/src/engine/Eval_generic.ml
+@@ -285,6 +285,10 @@
+           | Some (Some i, _) -> Int i
+           | _ -> raise (NotHandled code))
+       | __else__ -> raise (NotHandled code))
++  | G.Call ({ e = G.IdSpecial (G.Op _, _); _ }, _)
++    when (match code.operator_resolution with
++      | Some (G.DeclaredOperator _ | G.UnresolvedOperator) -> true | _ -> false) ->
++      raise (NotHandled code)
+   | G.Call ({ e = G.IdSpecial (G.Op op, _t); _ }, (_, args, _)) ->
+       let values =
+         args
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -40,6 +40,29 @@
+ module Effect = Shape_and_sig.Effect
+ module Effects = Shape_and_sig.Effects
+ module Signature = Shape_and_sig.Signature
++
++let swift_operator_declarations ast =
++  let selected = ref IL.NameSet.empty in
++  let visitor = object
++    inherit [_] G.iter_no_id_info as super
++    method! visit_expr () expression =
++      (match expression.G.operator_resolution with
++       | Some (G.DeclaredOperator (name, _)) ->
++           selected := IL.NameSet.add (AST_to_IL.var_of_name name) !selected
++       | _ -> ());
++      super#visit_expr () expression
++  end in
++  visitor#visit_program () ast;
++  let declarations = ref [] in
++  Visit_function_defs.visit (fun entity definition ->
++    match fst definition.G.fkind, entity with
++    | G.Method, Some entity ->
++        (match AST_to_IL.name_of_entity entity with
++         | Some name when IL.NameSet.mem name !selected ->
++             declarations := (G.DefStmt (entity, G.FuncDef definition) |> G.s) :: !declarations
++         | _ -> ())
++    | _ -> ()) ast;
++  List.rev !declarations
+ 
+ let environment_has_sources env =
+   Lval_env.seq_of_tainted env
+@@ -395,7 +418,8 @@
+         in
+         record_matches (Effects.union import_effects glob_effects);
+         let model_values =
+-          (Lang.is_js lang
++          (Lang.equal lang Lang.Swift && taint_inst.options.taint_intrafile)
++          || (Lang.is_js lang
+            && (taint_inst.options.taint_intrafile
+                || List.exists
+                     (fun (_, source) -> Option.is_some source.R.source_model_type)
+@@ -422,7 +446,8 @@
+         let deferred_functions = !deferred_functions in
+         let module_cfg =
+           if model_values then
+-            let statements = AST_to_IL.stmt lang (G.stmt1 ast) in
++            let declarations = if Lang.equal lang Lang.Swift then swift_operator_declarations ast else [] in
++            let statements = AST_to_IL.stmt lang (G.stmt1 (declarations @ ast)) in
+             let cfg, lambdas = CFG_build.cfg_of_stmts statements in
+             Some IL.{ params = []; cfg; lambdas }
+           else None
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -1385,5 +1385,6 @@
+   visitor#visit_program () prog;
+   if Lang.is_js lang then Javascript_bindings.resolve prog
+   else if lang =*= Lang.Rust then Rust_type_names.resolve_program prog
++  else if lang =*= Lang.Swift then Swift_operator_resolution.resolve_program prog
+   else prog
+ [@@profiling]
+--- a/src/typing/Typing.ml
++++ b/src/typing/Typing.ml
+@@ -62,6 +62,10 @@
+        * some point we should introduce a `Class` type and unwrap it here upon
+        * instantiation. *)
+       | G.New (_tk, t, _ii, _) -> (type_of_ast_generic_type lang t, None)
++      | G.Call ({ e = IdSpecial (Op _, _); _ }, _)
++        when (match e.operator_resolution with
++          | Some (G.DeclaredOperator _ | G.UnresolvedOperator) -> true | _ -> false) ->
++          (Type.NoType, None)
+       (* Binary operator *)
+       | G.Call ({ e = IdSpecial (Op op, _); _ }, (_l, [ Arg e1; Arg e2 ], _r))
+         ->

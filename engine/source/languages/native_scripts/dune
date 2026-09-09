@@ -1,0 +1,11 @@
+(library
+ (public_name semgrep.native_script_tree)
+ (name native_script_tree)
+ (wrapped false)
+ (modules Native_script_tree)
+ (libraries commons lib_parsing lib_parsing_tree_sitter ast_generic tree-sitter.run)
+ (foreign_stubs
+  (language c)
+  (names bindings)
+  (flags -std=c99 -fPIC -I %{env:TREESITTER_INCDIR=/usr/local/include} -I .))
+ (c_library_flags -L%{env:TREESITTER_LIBDIR=/usr/local/lib} -ltree-sitter))

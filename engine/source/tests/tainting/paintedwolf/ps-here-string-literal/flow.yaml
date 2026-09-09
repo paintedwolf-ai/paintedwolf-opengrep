@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "powershell"
+      ],
+      "severity": "ERROR",
+      "message": "Native string semantics",
+      "pattern": "Write-Output \"literal\""
+    }
+  ]
+}

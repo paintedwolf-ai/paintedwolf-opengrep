@@ -1,0 +1,36 @@
+rules:
+- id: model-flow
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Modeled API receives external input
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+    exact: true
+    label: EXTERNAL
+  - pattern: shared()
+    exact: true
+    label: OBJECT
+    model-type: unit.object
+    model-singleton: true
+  - pattern: factory(...)
+    exact: true
+    label: OBJECT
+    model-type: unit.object
+  pattern-sinks:
+  - patterns:
+    - pattern: $OBJECT.run($COMMAND)
+    - focus-metavariable: $COMMAND
+    requires: EXTERNAL
+    requires-model-type:
+      metavariable: $OBJECT
+      type: unit.object
+      member: run
+  pattern-propagators:
+  - pattern: $OBJECT.run(...)
+    from: $OBJECT
+    to: $OBJECT
+    by-side-effect: false
+    from-model-type: unit.object
+    from-model-member: run
+    preserves-model-type: true

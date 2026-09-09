@@ -1,0 +1,2 @@
+// ruleid: model
+observe(canonical());

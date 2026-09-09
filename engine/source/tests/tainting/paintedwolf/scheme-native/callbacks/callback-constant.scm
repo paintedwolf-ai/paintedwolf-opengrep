@@ -1,0 +1,5 @@
+(use-modules ((web server) #:select (run-server)))
+(define (handler request body)
+  (set! body "fixed")
+  (sink body))
+(run-server handler)

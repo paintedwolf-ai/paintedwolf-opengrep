@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "native-diagnostic",
+      "languages": [
+        "powershell"
+      ],
+      "message": "Native diagnostic regression",
+      "severity": "ERROR",
+      "pattern": "Invoke-PwAuditSink ..."
+    }
+  ]
+}

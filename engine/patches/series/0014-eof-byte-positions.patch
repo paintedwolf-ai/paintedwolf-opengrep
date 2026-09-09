@@ -1,0 +1,50 @@
+diff --git a/libs/lib_parsing/Pos.ml b/libs/lib_parsing/Pos.ml
+index 6e079fa..7e21dec 100644
+--- a/libs/lib_parsing/Pos.ml
++++ b/libs/lib_parsing/Pos.ml
+@@ -138,7 +138,7 @@ let converters_of_arrays line_arr col_arr : bytepos_linecol_converters =
+   (* len1 and len2 should be equal but we're playing it safe *)
+   let len = min len1 len2 in
+   match len with
+-  | 2 ->
++  | 1 ->
+       {
+         bytepos_to_linecol_fun = (fun _i -> (1, 0));
+         linecol_to_bytepos_fun = (fun _ -> 0);
+@@ -176,7 +176,7 @@ let converters_of_arrays line_arr col_arr : bytepos_linecol_converters =
+ 
+ (* coupling: see also Parse_tree_sitter_helpers.line_col_to_pos *)
+ let full_converters_large (file : Fpath.t) : bytepos_linecol_converters =
+-  let size = UFile.filesize file + 2 in
++  let size = UFile.filesize file + 1 in
+ 
+   (* old: let arr = Array.create size  (0,0) in *)
+   let arr1 = Bigarray.Array1.create Bigarray.int Bigarray.c_layout size in
+@@ -197,7 +197,7 @@ let full_converters_large (file : Fpath.t) : bytepos_linecol_converters =
+ 
+             (* '... +1 do'  cos input_line does not return the trailing \n *)
+             let col = ref 0 in
+-            for i = 0 to len - 1 + 1 do
++            for i = 0 to min len (size - !charpos - 1) do
+               (* old: arr.(!charpos + i) <- (!line, i); *)
+               arr1.{!charpos + i} <- !line;
+               arr2.{!charpos + i} <- !col;
+@@ -230,8 +230,7 @@ let full_converters_large (file : Fpath.t) : bytepos_linecol_converters =
+               to (* old: Array.length arr *)
+                  Bigarray.Array1.dim arr1 - 1
+             do
+-              (* old: arr.(i) <- (!line, 0); *)
+-              arr1.{i} <- !line;
++              arr1.{i} <- !line + 1;
+               arr2.{i} <- 0
+             done;
+             ()
+@@ -243,7 +242,7 @@ let full_converters_large (file : Fpath.t) : bytepos_linecol_converters =
+ (* This is mostly a copy-paste of full_charpos_to_pos_large,
+    but using a string for a target instead of a file. *)
+ let full_converters_str (s : string) : bytepos_linecol_converters =
+-  let size = String.length s + 2 in
++  let size = String.length s + 1 in
+ 
+   let arr1 = Bigarray.Array1.create Bigarray.int Bigarray.c_layout size in
+   let arr2 = Bigarray.Array1.create Bigarray.int Bigarray.c_layout size in

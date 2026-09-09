@@ -1,0 +1,23 @@
+{
+  "rules": [
+    {
+      "id": "native-diagnostic",
+      "languages": [
+        "perl"
+      ],
+      "message": "Native diagnostic regression",
+      "severity": "ERROR",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "pwAuditSink(...)"
+        }
+      ]
+    }
+  ]
+}

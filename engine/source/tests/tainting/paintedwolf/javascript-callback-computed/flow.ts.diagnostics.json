@@ -1,0 +1,12 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "callback_parameter_binding",
+    "line": 15
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "callback_parameter_binding",
+    "line": 22
+  }
+]

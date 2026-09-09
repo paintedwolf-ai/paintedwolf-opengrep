@@ -1,0 +1,38 @@
+{
+  "rules": [
+    {
+      "id": "origin",
+      "languages": [
+        "swift"
+      ],
+      "message": "Modeled import identity",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "func $H(..., $R: $TYPE, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "Vapor",
+            "symbol": [
+              "Request"
+            ],
+            "imports": {
+              "exports": [
+                {
+                  "module": "Foundation",
+                  "symbol": "Request",
+                  "absent": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "focus-metavariable": "$R"
+        }
+      ]
+    }
+  ]
+}

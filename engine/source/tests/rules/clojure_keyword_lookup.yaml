@@ -1,0 +1,15 @@
+rules:
+  - id: keyword-source
+    languages: [clojure]
+    message: Value from a modeled keyword lookup reaches a sink
+    severity: ERROR
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: (:input $MAP)
+          - pattern: (:input $MAP $DEFAULT)
+        exact: true
+    pattern-sinks:
+      - patterns:
+          - pattern: (sink $VALUE)
+          - focus-metavariable: $VALUE

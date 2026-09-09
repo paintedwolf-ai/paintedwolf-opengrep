@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "clojure"
+      ],
+      "severity": "ERROR",
+      "message": "Registered request input reaches code loading",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "(source)",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "(sink $VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

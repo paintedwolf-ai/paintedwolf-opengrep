@@ -1,0 +1,20 @@
+[
+  "tainting/paintedwolf/rule-translation/propagator-and.yaml",
+  "tainting/paintedwolf/rule-translation/propagator-false.yaml",
+  "tainting/paintedwolf/rule-translation/propagator-label.yaml",
+  "tainting/paintedwolf/rule-translation/propagator-nested.yaml",
+  "tainting/paintedwolf/rule-translation/propagator-or.yaml",
+  "tainting/paintedwolf/rule-translation/propagator-true.yaml",
+  "tainting/paintedwolf/rule-translation/sink-and.yaml",
+  "tainting/paintedwolf/rule-translation/sink-false.yaml",
+  "tainting/paintedwolf/rule-translation/sink-label.yaml",
+  "tainting/paintedwolf/rule-translation/sink-nested.yaml",
+  "tainting/paintedwolf/rule-translation/sink-or.yaml",
+  "tainting/paintedwolf/rule-translation/sink-true.yaml",
+  "tainting/paintedwolf/rule-translation/source-and.yaml",
+  "tainting/paintedwolf/rule-translation/source-false.yaml",
+  "tainting/paintedwolf/rule-translation/source-label.yaml",
+  "tainting/paintedwolf/rule-translation/source-nested.yaml",
+  "tainting/paintedwolf/rule-translation/source-or.yaml",
+  "tainting/paintedwolf/rule-translation/source-true.yaml"
+]

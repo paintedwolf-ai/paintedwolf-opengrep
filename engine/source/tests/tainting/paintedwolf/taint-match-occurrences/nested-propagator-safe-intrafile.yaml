@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink(...)",
+          "exact": true
+        }
+      ],
+      "options": {
+        "taint_only_propagate_through_assignments": true,
+        "taint_intrafile": true
+      },
+      "pattern-propagators": [
+        {
+          "patterns": [
+            {
+              "pattern": "$OUT"
+            },
+            {
+              "pattern": "copy($IN)"
+            }
+          ],
+          "from": "$IN",
+          "to": "$OUT",
+          "by-side-effect": false
+        }
+      ]
+    }
+  ]
+}

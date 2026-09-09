@@ -1,0 +1,16 @@
+rules:
+- id: flow
+  languages: [javascript]
+  severity: ERROR
+  message: Preserve reachable helper inputs
+  mode: taint
+  options:
+    taint_intrafile: true
+    guarded_taint_signatures: true
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE

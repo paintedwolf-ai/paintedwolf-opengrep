@@ -1,0 +1,43 @@
+rules:
+- id: flow
+  languages: [powershell]
+  severity: ERROR
+  message: Builtin HTTP input reaches builtin expression evaluation
+  metadata:
+    references:
+    - https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_functions?view=powershell-7.5
+    - https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_output_streams?view=powershell-7.6
+    scope: Default streams and lexically resolved function names; aliases and stream redirection require separate models.
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - patterns:
+    - pattern: "& $FETCH ..."
+    - metavariable-regex:
+        metavariable: $FETCH
+        regex: '(?i)^Invoke-RestMethod$'
+    - metavariable-name:
+        metavariable: $FETCH
+        kind: unbound
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: "& $EVAL $VALUE"
+    - metavariable-regex:
+        metavariable: $EVAL
+        regex: '(?i)^Invoke-Expression$'
+    - metavariable-name:
+        metavariable: $EVAL
+        kind: unbound
+    - focus-metavariable: $VALUE
+  pattern-sanitizers:
+  - patterns:
+    - pattern: "& $WRITE ..."
+    - metavariable-regex:
+        metavariable: $WRITE
+        regex: '(?i)^Write-(Host|Verbose|Debug|Information|Warning|Error)$'
+    - metavariable-name:
+        metavariable: $WRITE
+        kind: unbound
+    exact: true

@@ -1,0 +1,15 @@
+rules:
+  - id: flow
+    languages: [groovy]
+    message: Input flows through map fields and method arguments
+    severity: ERROR
+    mode: taint
+    options:
+      taint_intrafile: true
+    pattern-sources:
+      - pattern: source()
+        exact: true
+    pattern-sinks:
+      - patterns:
+          - pattern: sink($VALUE)
+          - focus-metavariable: $VALUE

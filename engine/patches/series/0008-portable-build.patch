@@ -1,0 +1,75 @@
+diff --git a/scripts/build-nuitka.sh b/scripts/build-nuitka.sh
+index e04f76c..cb3c054 100755
+--- a/scripts/build-nuitka.sh
++++ b/scripts/build-nuitka.sh
+@@ -13,7 +13,13 @@ if [[ -z "$VERSION" ]]; then
+   exit 1
+ fi
+ 
+-EXTRA_ARGS=()
++EXTRA_ARGS=(--assume-yes-for-downloads --user-plugin=../scripts/private_python_nuitka.py)
++if [[ "$(uname)" == "Darwin" ]]; then
++  EXTRA_ARGS+=(--static-libpython=no)
++  if [[ -n "${OPENGREP_SIGN_IDENTITY:-}" ]]; then
++    EXTRA_ARGS+=(--macos-sign-identity="${OPENGREP_SIGN_IDENTITY}" --macos-sign-notarization --macos-signed-app-name=dev.paintedwolf.opengrep)
++  fi
++fi
+ 
+ # On linux we only compile to --onefile if forced using FORCE_ONEFILE.
+ # In that case, we fix the tempdir to a reasonable cache directory, for
+@@ -21,7 +27,7 @@ EXTRA_ARGS=()
+ if [[ "$FORCE_ONEFILE" == "true" || "$(uname)" == "Darwin" || "$(uname -s)" =~ ^(CYGWIN|MINGW|MSYS) ]]; then
+   EXTRA_ARGS+=(
+     --onefile
+-    --onefile-tempdir-spec="{CACHE_DIR}/opengrep/$VERSION"
++    --onefile-tempdir-spec="{CACHE_DIR}/opengrep/${OPENGREP_BUILD_ID:-$VERSION}"
+   )
+ fi
+ 
+@@ -52,6 +58,7 @@ pushd cli
+ 
+ "$PYTHON_BIN" -m nuitka \
+   --standalone \
++  --jobs="${NUITKA_JOBS:-2}" \
+   "${EXTRA_ARGS[@]}" \
+   --product-name=opengrep \
+   --product-version="${VERSION:1}" \
+diff --git a/src/main/dune b/src/main/dune
+index 86af34d..94b0b52 100644
+--- a/src/main/dune
++++ b/src/main/dune
+@@ -20,7 +20,10 @@
+ (rule
+  (targets flags.sexp)
+  (deps
+-  (:langs tree-sitter-langs.dat))
++  (:langs tree-sitter-langs.dat)
++  (env_var SEMGREP_LIBEV_ARCHIVE_PATH)
++  (env_var PKG_CONFIG_PATH)
++  (env_var PKG_CONFIG_LIBDIR))
+  (enabled_if
+   (<> %{os_type} Win32))
+  (action
+diff --git a/src/main/flags.sh b/src/main/flags.sh
+index 742fd3d..263ae06 100755
+--- a/src/main/flags.sh
++++ b/src/main/flags.sh
+@@ -144,6 +144,10 @@ else
+         CCOPT=()
+         # TODO: ideally much of this could be generated from dune/opam.
+         CCLIB=(
++            "-lnative_script_tree_stubs"
++            "-lnative_groovy_stubs"
++            "-lnative_powershell_stubs"
++            "-lnative_perl_stubs"
+             "-lANSITerminal_stubs"
+             "-lalcotest_stubs"
+             "-lbase_internalhash_types_stubs"
+@@ -177,6 +181,6 @@ else
+             "$(pkg-config gmp --variable libdir)/libgmp.a"
+             "$(pkg-config tree-sitter --variable libdir)/libtree-sitter.a"
+             "$(pkg-config libpcre2-8 --variable libdir)/libpcre2-8.a"
+-            "$(brew --prefix zstd)/lib/libzstd.a"
++            "$(pkg-config libzstd --variable libdir)/libzstd.a"
+             # "-lpthread"
+         )

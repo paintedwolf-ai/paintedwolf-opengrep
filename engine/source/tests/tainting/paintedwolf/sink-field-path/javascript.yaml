@@ -1,0 +1,16 @@
+rules:
+- id: flow
+  languages:
+  - javascript
+  severity: ERROR
+  message: Selected destination receives external input
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE
+    value-path:
+    - url

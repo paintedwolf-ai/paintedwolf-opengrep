@@ -1,0 +1,872 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "severity": "ERROR",
+      "message": "Registered HTTP input reaches evaluation",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import $FACTORY from \"express\"; ..."
+            },
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP",
+          "model-type": "express.app"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import {Router as $FACTORY} from \"express\"; ..."
+            },
+            {
+              "pattern": "$FACTORY(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP",
+          "model-type": "express.app"
+        },
+        {
+          "patterns": [
+            {
+              "pattern-inside": "import * as $MODULE from \"express\"; ..."
+            },
+            {
+              "pattern": "$MODULE.Router(...)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$MODULE",
+                "module": "express"
+              }
+            }
+          ],
+          "exact": true,
+          "label": "HTTP_APP",
+          "model-type": "express.app"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY = require(\"express\")"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "HTTP_FACTORY",
+          "model-type": "express.factory"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "const {Router: $FACTORY} = require(\"express\");"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$FACTORY",
+                "module": "express"
+              }
+            },
+            {
+              "focus-metavariable": "$FACTORY"
+            }
+          ],
+          "exact": true,
+          "by-side-effect": true,
+          "label": "HTTP_FACTORY",
+          "model-type": "express.factory"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY(...)"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP",
+          "model-type": "express.app",
+          "requires-model-type": {
+            "metavariable": "$FACTORY",
+            "type": "express.factory"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY.Router(...)"
+            }
+          ],
+          "exact": true,
+          "requires": "HTTP_FACTORY",
+          "label": "HTTP_APP",
+          "model-type": "express.app",
+          "requires-model-type": {
+            "metavariable": "$FACTORY",
+            "type": "express.factory",
+            "member": "Router"
+          }
+        }
+      ],
+      "pattern-propagators": [
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "query"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "body"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "params"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "patterns": [
+            {
+              "pattern": "$APP.$METHOD($PATH, ..., $HANDLER, ...)"
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$METHOD",
+                "regex": "^(get|post|put|patch|delete|head|options|all)$"
+              }
+            }
+          ],
+          "from-model-member": "$METHOD",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "from-model-type": "express.app",
+          "pattern": "$APP.use($FIRST, ..., $HANDLER, ...)",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "from": "$APP",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 1,
+            "path": [
+              "headers"
+            ],
+            "arities": [
+              4
+            ],
+            "array-elements": true,
+            "array-head-callable": true,
+            "preserves-array": true
+          },
+          "requires": "HTTP_APP",
+          "label": "HTTP_VALUE",
+          "pattern": "$APP.use($HANDLER, ...)",
+          "from-model-type": "express.app",
+          "from-model-member": "use",
+          "preserves-model-type": true
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "$FACTORY.Router(...)"
+            }
+          ],
+          "from": "$FACTORY",
+          "to": "$FACTORY",
+          "by-side-effect": false,
+          "from-model-type": "express.factory",
+          "from-model-member": "Router",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.set($NAME, $VALUE)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "set",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.enable($NAME)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "enable",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.disable($NAME)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "disable",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.enabled($NAME)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "enabled",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.disabled($NAME)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "disabled",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.get($NAME)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "get",
+          "preserves-model-type": true
+        },
+        {
+          "pattern": "$APP.engine($EXTENSION, $RENDERER)",
+          "from": "$APP",
+          "to": "$APP",
+          "by-side-effect": false,
+          "from-model-type": "express.app",
+          "from-model-member": "engine",
+          "preserves-model-type": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires": "HTTP_VALUE"
+        }
+      ],
+      "metadata": {
+        "references": [
+          "https://raw.githubusercontent.com/pillarjs/router/v2.2.0/lib/layer.js",
+          "https://github.com/pillarjs/router/blob/v2.2.0/index.js"
+        ]
+      },
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

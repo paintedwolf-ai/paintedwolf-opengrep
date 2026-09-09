@@ -1,0 +1,88 @@
+rules:
+- id: shell-flow
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: External input reaches a verified shell API
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+    exact: true
+    label: EXTERNAL
+  - patterns:
+    - pattern: 'const {$METHOD: $CALL} = require($PACKAGE);'
+    - metavariable-name:
+        metavariable: $CALL
+        modules: [child_process, node:child_process]
+        symbol: [exec]
+    - focus-metavariable: $CALL
+    exact: true
+    by-side-effect: true
+    label: SHELL_FUNCTION
+    model-type: node.shell.function
+  - patterns:
+    - pattern: 'const {$METHOD: $CALL} = require($PACKAGE);'
+    - metavariable-name:
+        metavariable: $CALL
+        modules: [child_process, node:child_process]
+        symbol: [execSync]
+    - focus-metavariable: $CALL
+    exact: true
+    by-side-effect: true
+    label: SHELL_FUNCTION
+    model-type: node.shell.function
+  - patterns:
+    - pattern: $MODULE = require($PACKAGE)
+    - metavariable-name:
+        metavariable: $MODULE
+        modules: [child_process, node:child_process]
+        symbol: []
+    - focus-metavariable: $MODULE
+    exact: true
+    by-side-effect: true
+    label: SHELL_MODULE
+    model-type: node.child_process
+    model-singleton: true
+  - patterns:
+    - pattern: $MODULE.$METHOD
+    - metavariable-regex:
+        metavariable: $METHOD
+        regex: ^(exec|execSync)$
+    exact: true
+    requires: SHELL_MODULE
+    label: SHELL_FUNCTION
+    model-type: node.shell.function
+    requires-model-type:
+      metavariable: $MODULE
+      type: node.child_process
+      member: $METHOD
+  pattern-sinks:
+  - patterns:
+    - pattern: $CALL($COMMAND, ...)
+    - focus-metavariable: $COMMAND
+    requires: EXTERNAL
+    requires-model-type:
+      metavariable: $CALL
+      type: node.shell.function
+  - patterns:
+    - pattern: $MODULE.$METHOD($COMMAND, ...)
+    - metavariable-regex:
+        metavariable: $METHOD
+        regex: ^(exec|execSync)$
+    - focus-metavariable: $COMMAND
+    requires: EXTERNAL
+    requires-model-type:
+      metavariable: $MODULE
+      type: node.child_process
+      member: $METHOD
+  pattern-propagators:
+  - patterns:
+    - pattern: $MODULE.$METHOD(...)
+    - metavariable-regex:
+        metavariable: $METHOD
+        regex: ^(exec|execSync|execFile|execFileSync|spawn|spawnSync|fork)$
+    from: $MODULE
+    to: $MODULE
+    by-side-effect: false
+    from-model-type: node.child_process
+    from-model-member: $METHOD
+    preserves-model-type: true

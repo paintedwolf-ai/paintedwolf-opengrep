@@ -1,0 +1,6 @@
+rules:
+  - id: bare-argument
+    languages: [powershell]
+    message: Bare command argument preserves its literal value
+    severity: ERROR
+    pattern: Write-Output FixedCase

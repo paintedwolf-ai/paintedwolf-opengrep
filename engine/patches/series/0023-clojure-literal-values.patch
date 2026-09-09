@@ -1,0 +1,10 @@
+--- a/src/analyzing/Dataflow_svalue.ml
++++ b/src/analyzing/Dataflow_svalue.ml
+@@ -142,6 +142,7 @@
+ let rec is_symbolic_expr expr =
+   match expr.G.e with
+   | G.L _ -> true
++  | G.OtherExpr (("Atom", _), [G.Name _]) -> true
+   | G.N _ -> true
+   | G.IdSpecial _ -> true
+   | G.Cast (_, _, e)

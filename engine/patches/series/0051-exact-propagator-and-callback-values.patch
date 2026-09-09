@@ -1,0 +1,48 @@
+--- a/src/engine/Match_taint_spec.ml
++++ b/src/engine/Match_taint_spec.ml
+@@ -378,11 +378,6 @@
+                 { spec; spec_id = get_id spec; spec_pm; range = r; overlap })
+          else None)
+ 
+-let is_exact_match ~match_range r =
+-  let overlap = overlap_with ~match_range r in
+-  let r1 = match_range in
+-  Range.( $<=$ ) r r1 && overlap > 0.99
+-
+ let mk_propagator_match rule (prop : propagator_match) var kind r =
+   let spec_pm = RM.range_to_pattern_match_adjusted rule prop.rwm in
+   let spec : Taint_rule_inst.a_propagator = { kind; prop = prop.spec; var } in
+@@ -394,9 +389,8 @@
+     overlap = 1.0;
+   }
+ 
+-(* Check whether `any` matches either the `from` or the `to` of any of the
+- * `pattern-propagators`. Matches must be exact (overlap > 0.99) to make
+- * taint propagation more precise and predictable. *)
++(* Propagators bind the selected endpoint value, never a nested expression
++ * that merely occupies most of its source range. *)
+ let any_is_in_propagators_matches_OSS rule matches any :
+     Taint_rule_inst.a_propagator Taint_spec_match.t list =
+   match range_of_any any with
+@@ -405,8 +399,8 @@
+       matches
+       |> List.concat_map (fun prop ->
+              let var = prop.id in
+-             let is_from = is_exact_match ~match_range:prop.from r in
+-             let is_to = is_exact_match ~match_range:prop.to_ r in
++             let is_from = Range.equal prop.from r in
++             let is_to = Range.equal prop.to_ r in
+              let mk_match kind = mk_propagator_match rule prop var kind r in
+              (if is_from then [ mk_match `From ] else [])
+              @ (if is_to then [ mk_match `To ] else [])
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -1161,7 +1161,7 @@
+   List.iter
+     (fun (source : R.taint_source TM.t) ->
+       match source.spec.source_to_parameter with
+-      | Some parameter when TM.is_exact source ->
++      | Some parameter when Range.equal source.range (Core_match.range source.spec_pm) ->
+           let taints =
+             T.taints_of_pms ~incoming [ (source.spec_pm, source.spec) ]
+           in

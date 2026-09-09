@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "raw-interpolation",
+      "languages": [
+        "swift"
+      ],
+      "severity": "ERROR",
+      "message": "Raw interpolation label",
+      "pattern": "sink(\"...\\(raw: $VALUE)...\")"
+    }
+  ]
+}

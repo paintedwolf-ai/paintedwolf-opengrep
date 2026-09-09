@@ -1,0 +1,46 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "dart"
+      ],
+      "message": "A modeled parameter reaches its typed sink",
+      "severity": "ERROR",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": false
+      },
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "void handler($TYPE $REQ) { ... }"
+            },
+            {
+              "focus-metavariable": "$REQ"
+            }
+          ],
+          "exact": true,
+          "model-type": "example.Request"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "example.Request"
+          }
+        }
+      ]
+    }
+  ]
+}

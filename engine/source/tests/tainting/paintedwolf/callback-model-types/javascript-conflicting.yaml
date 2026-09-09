@@ -1,0 +1,79 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Modeled callback parameter reaches its typed sink",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": false
+      },
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "register($HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "model-type": "example.Request",
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          },
+          "label": "MODEL_0"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "register($HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "model-type": "example.Other",
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          },
+          "label": "MODEL_1"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "example.Request"
+          },
+          "requires": "MODEL_0 or MODEL_1"
+        },
+        {
+          "pattern": "rawSink($VALUE)",
+          "requires": "MODEL_0 or MODEL_1"
+        }
+      ]
+    }
+  ]
+}

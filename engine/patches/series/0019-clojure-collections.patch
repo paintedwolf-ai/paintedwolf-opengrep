@@ -1,0 +1,166 @@
+diff --git a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
+--- a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
++++ b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
+@@ -73,6 +73,7 @@
+   kind: parse_kind;
+   mode: syntax_mode;
+   ns: string option; (* alt: or in split form? [clojure; core] etc; or G.name? *)
++  core_collections: bool;
+   ns_aliases: (string * string) list;
+    (* (ns my.ns (:require [other.ns :as my-alias])) *)
+ } 
+@@ -419,7 +420,12 @@
+         let s' =
+           match s with "..." when in_pattern env -> "$_" | _ -> s
+         in
+-        Id ((s', t), empty_id_info ())
++        let info = empty_id_info () in
++        if env.extra.dialect =*= Clojure && env.extra.kind =*= Program
++           && env.extra.mode =*= Normal && env.extra.core_collections
++           && List.mem s ["assoc"; "get"] then
++          info.id_resolved := Some (G.ImportedEntity ["clojure"; "core"; s], G.SId.unsafe_default);
++        Id ((s', t), info)
+ 
+ let name (env : env) (tok : Tree_sitter_run.Token.t) : G.name =
+   name_from_ident env (H.str env tok)
+@@ -2930,9 +2936,23 @@
+                   | _ -> [])
+               | _ -> []) clauses
+           in
+-          {env with extra = {env.extra with ns = Some namespace; ns_aliases = aliases}}
+-      | `Sym_lit (_, (_, ("in-ns" | "alias" | "ns-unalias" | "require"))) :: _ ->
+-          {env with extra = {env.extra with ns_aliases = []}}
++          let core_collections = not (List.exists
++            (function
++              | `List_lit (_, (_, clause_source, _)) -> (
++                  match forms_in_source env clause_source with
++                  | `Kwd_lit (_, (":refer-clojure" | ":use")) :: _ -> true
++                  | `Kwd_lit (_, ":require") :: libraries ->
++                      List.exists (function
++                        | `Vec_lit (_, (_, library_source, _)) ->
++                            List.exists (function
++                              | `Kwd_lit (_, (":refer" | ":rename")) -> true
++                              | _ -> false) (forms_in_source env library_source)
++                        | _ -> true) libraries
++                  | _ -> false)
++              | _ -> false) clauses) in
++          {env with extra = {env.extra with ns = Some namespace; ns_aliases = aliases; core_collections}}
++      | `Sym_lit (_, (_, ("in-ns" | "alias" | "ns-unalias" | "require" | "refer" | "use"))) :: _ ->
++          {env with extra = {env.extra with ns_aliases = []; core_collections = false}}
+       | _ -> env)
+   | _ -> env
+ 
+@@ -2954,7 +2974,7 @@
+       let env = { H.file;
+                   conv = H.line_col_to_pos file;
+                   extra = {dialect; kind = Program; mode = Normal;
+-                           ns = None; ns_aliases = []} }
++                           ns = None; ns_aliases = []; core_collections = true} }
+       in
+       map_program env cst)
+ 
+@@ -2994,7 +3014,7 @@
+                    * metavar, perhaps anonymous, so it can be matched.
+                    * *)
+                   extra = {dialect; kind = Pattern; mode = Normal;
+-                           ns = None; ns_aliases = []} }
++                           ns = None; ns_aliases = []; core_collections = true} }
+       in
+       (* XXX: Need sequence of ExprStmt to one ExprStmt with ExprBlock inside.
+        * See dots_stmts.{clj,sgrep} and metavar_equality_var.{clj,sgrep}.
+diff --git a/src/analyzing/AST_to_IL.ml b/src/analyzing/AST_to_IL.ml
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -164,6 +164,17 @@
+ (*****************************************************************************)
+ (* Helpers *)
+ (*****************************************************************************)
++
++let clojure_core_call name = function
++  | { G.e = G.N (G.Id (_, info)); _ } -> (
++      match !(info.G.id_resolved) with
++      | Some (G.ImportedEntity ["clojure"; "core"; member], _) -> String.equal member name
++      | _ -> false)
++  | { G.e = G.N (G.IdQualified {
++        name_last = ((member, _), None);
++        name_middle = Some (G.QDots [(("clojure", _), None); (("core", _), None)]); _ }); _ } ->
++      String.equal member name
++  | _ -> false
+ 
+ let fresh_var ?(str = "_tmp") tok : name =
+   let tok =
+@@ -1606,22 +1617,41 @@
+       let if_stmt = mk_s (If (atom_tok, cond_exp, then_branch, [])) in
+       ( ss_map @ [ assign_field ] @ ss_default @ [ if_stmt ],
+         mk_e (Fetch tmp_lval) eorig )
+-  | G.Call (e, args) when env.lang =*= Lang.Clojure ->
++  | G.Call (callee, (_, [G.Arg collection; G.Arg key], _))
++    when env.lang =*= Lang.Clojure && clojure_core_call "get" callee ->
++      let tok = G.fake "get" in
++      expr env ~void {g_expr with G.e = G.ArrayAccess (collection, (tok, key, tok))}
++  | G.Call (callee, (_, G.Arg collection :: pairs, _))
++    when env.lang =*= Lang.Clojure && clojure_core_call "assoc" callee
++         && List.length pairs >= 2 && List.length pairs mod 2 =*= 0
++         && List.for_all (function G.Arg _ -> true | _ -> false) pairs ->
++      let tok = G.fake "assoc" in
++      let ss_collection, collection_value = expr env collection in
++      let result = fresh_lval tok in
++      (* Persistent updates leave the original collection and its aliases intact. *)
++      let copy = mk_s (Instr (mk_i (Assign (result, collection_value)) NoOrig)) in
++      let rec updates = function
++        | G.Arg key :: G.Arg value :: rest ->
++            let ss_key, key_value = expr env key in
++            let ss_value, value = expr env value in
++            let target = {result with rev_offset = [{o = Index key_value; oorig = NoOrig}]} in
++            let write = mk_s (Instr (mk_i (Assign (target, value)) NoOrig)) in
++            ss_key @ ss_value @ [write] @ updates rest
++        | _ -> []
++      in
++      (ss_collection @ [copy] @ updates pairs, mk_e (Fetch result) eorig)
++  | G.Call (callee, args) when env.lang =*= Lang.Clojure ->
+       let tok = G.fake "call" in
+-      let arg_list = Tok.unbracket args in
+-      let arg_list_unwrapped =
+-        List_.map (function
+-            | G.Arg expr -> expr
+-            | _ -> failwith "Expected G.Arg")
+-          arg_list
+-      in
+-      let arg_container =
+-            [ G.Arg
+-                (G.Container
+-                   (G.List, Tok.unsafe_fake_bracket arg_list_unwrapped)
+-                 |> G.e) ]
+-      in
+-      call_generic env ~void tok eorig e (Tok.unsafe_fake_bracket arg_container)
++      let ss_callee, callee = expr env callee in
++      let values = List_.map (function
++        | G.Arg arg -> expr env arg
++        | arg -> raise (Fixme (ToDo, G.Ar arg))) (Tok.unbracket args) in
++      let ss_args = List.concat_map fst values in
++      (* The argument pack is synthetic and must not match a focused source argument. *)
++      let packed = mk_e (Composite (CList, (tok, List_.map snd values, tok))) NoOrig in
++      let ss_call, result = call_instr tok eorig ~void
++        (fun res -> Call (res, callee, [Unnamed packed])) in
++      (ss_callee @ ss_args @ ss_call, result)
+   (* Ruby/Crystal [Proc.new { |x| body }] returns the block as a Proc. Lower
+      just the inner Lambda so [cb = Proc.new { ... }] takes the
+      [AssignAnon(_tmp_lambda, Lambda)] path and [cb] inherits the
+diff --git a/src/naming/Naming_AST.ml b/src/naming/Naming_AST.ml
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -1038,9 +1038,12 @@
+       match x with
+       | Id (id, id_info) -> (
+           if
+-            (* Avoid overwriting 'id_resolved'.
+-             * THINK: Maybe log something if we were going to overwrite ? *)
++            (* Clojure core imports are defaults; lexical bindings take precedence. *)
+             Option.is_none !(id_info.id_resolved)
++            || (lang =*= Lang.Clojure
++                && match !(id_info.id_resolved) with
++                   | Some (ImportedEntity ["clojure"; "core"; _], _) -> true
++                   | _ -> false)
+           then
+             match lookup_scope_opt id env with
+             | Some resolved ->

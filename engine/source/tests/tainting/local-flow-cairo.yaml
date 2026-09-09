@@ -1,0 +1,11 @@
+rules:
+  - id: local-flow
+    languages: [cairo]
+    severity: ERROR
+    message: Local source reaches sink
+    mode: taint
+    pattern-sources:
+      - pattern: source()
+        exact: true
+    pattern-sinks:
+      - pattern: sink($X)

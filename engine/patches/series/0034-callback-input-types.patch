@@ -1,0 +1,67 @@
+diff --git a/src/parsing/Parse_rule.ml b/src/parsing/Parse_rule.ml
+--- a/src/parsing/Parse_rule.ml
++++ b/src/parsing/Parse_rule.ml
+@@ -370,7 +370,7 @@
+     in
+     let/ () = if source_control && (Option.is_some source_model_type || Option.is_some source_value_type)
+       then error_at_key env.id key "Value types cannot annotate a control source" else Ok () in
+-    let/ () = if Option.is_some source_to_parameter && (not source_exact || source_control || not (source_by_side_effect =*= R.No) || Option.is_some source_model_type || Option.is_some source_value_type) then error_at_key env.id key "callback sources require exact, value-only semantics without a model or scalar type" else Ok () in
++    let/ () = if Option.is_some source_to_parameter && (not source_exact || source_control || not (source_by_side_effect =*= R.No)) then error_at_key env.id key "callback sources require exact, value-only semantics" else Ok () in
+     let/ label =
+       take_opt dict env parse_string "label"
+       |> Result.map (Option.value ~default:R.default_source_label)
+diff --git a/src/tainting/Dataflow_tainting.ml b/src/tainting/Dataflow_tainting.ml
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -1168,7 +1168,8 @@
+                 limitation;
+                 value_range = source.range;
+                 parameter;
+-                origin = Taint_callback_models.Source taints;
++                origin = Taint_callback_models.Source
++                  (taints, Taint_model_types.source_shape [source.spec] S.Bot);
+                 location = fst source.spec_pm.range_loc;
+               }
+               :: !(env.callback_requests)
+@@ -1355,29 +1356,9 @@
+         =*= Some true)
+       matches
+   in
+-  let models =
+-    matches
+-    |> List.filter_map (fun (m : R.taint_source TM.t) ->
+-           if TM.is_exact m && m.spec.source_exact then
+-             Option.map
+-               (fun name -> (name, m.spec.source_model_singleton))
+-               m.spec.source_model_type
+-           else None)
+-    |> List.sort_uniq Stdlib.compare
+-  in
+-  let types =
+-    matches
+-    |> List.filter_map (fun (m : R.taint_source TM.t) ->
+-           if TM.is_exact m && m.spec.source_exact then m.spec.source_value_type
+-           else None)
+-    |> List.sort_uniq R.compare_taint_value_type
+-  in
+-  match (models, types) with
+-  | [], [] -> original
+-  | [ (name, singleton) ], [] ->
+-      Taint_model_types.establish name ~singleton original
+-  | [], [ kind ] -> S.Scalar kind
+-  | _ -> S.Bot
++  let sources = matches |> List.filter_map (fun (m : R.taint_source TM.t) ->
++    if TM.is_exact m && Option.is_none m.spec.source_to_parameter then Some m.spec else None) in
++  Taint_model_types.source_shape sources original
+ 
+ let find_lval_taint_sources env incoming_taints lval =
+   let taints_of_pms env = taints_of_matches env ~incoming:incoming_taints in
+@@ -3835,7 +3816,7 @@
+   let env = { env with lval_env } in
+   let modeled_closures =
+     List.fold_left
+-      (fun names (name, _, _, _) -> IL.NameSet.add name names)
++      (fun names (name, _, _, _, _) -> IL.NameSet.add name names)
+       directly_called callback_inputs
+   in
+   let direct_lambdas =

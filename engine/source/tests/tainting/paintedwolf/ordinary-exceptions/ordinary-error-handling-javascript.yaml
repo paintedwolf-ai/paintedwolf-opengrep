@@ -1,0 +1,15 @@
+rules:
+- id: flow
+  languages: [javascript]
+  severity: ERROR
+  message: Preserve ordinary application data flow
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE

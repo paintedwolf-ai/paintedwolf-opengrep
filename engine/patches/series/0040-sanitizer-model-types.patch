@@ -1,0 +1,78 @@
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -292,6 +292,7 @@
+       * will be reported. *)
+   sanitizer_output_type : taint_value_type option;
+   sanitizer_requires_type : (string * taint_value_type) option;
++  sanitizer_requires_model_type : (string * string * string option) option;
+   sanitizer_by_side_effect : bool;
+   not_conflicting : bool;
+       (* If [not_conflicting] is enabled, the sanitizer cannot conflict with
+--- a/src/parsing/Parse_rule.ml
++++ b/src/parsing/Parse_rule.ml
+@@ -488,6 +488,7 @@
+       |> Result.map (Option.value ~default:false)
+     in
+     let/ sanitizer_output_type = take_opt dict env parse_taint_value_type "output-value-type" in
++    let/ sanitizer_requires_model_type = take_opt dict env parse_model_constraint "requires-model-type" in
+     let/ sanitizer_requires_type = take_opt dict env (fun env key value ->
+       let/ constraint_ = parse_dict env key value in
+       let/ variable = take_key constraint_ env parse_string "metavariable" in
+@@ -498,7 +499,8 @@
+       take_opt dict env parse_bool "by-side-effect"
+       |> Result.map (Option.value ~default:false)
+     in
+-    let/ () = if (Option.is_some sanitizer_output_type || Option.is_some sanitizer_requires_type)
++    let/ () = if (Option.is_some sanitizer_output_type || Option.is_some sanitizer_requires_type
++      || Option.is_some sanitizer_requires_model_type)
+       && (not sanitizer_exact || sanitizer_by_side_effect)
+       then error_at_key env.id key "value-type models require exact, value-only sanitizer semantics" else Ok () in
+     let/ not_conflicting =
+@@ -515,6 +517,7 @@
+           sanitizer_exact;
+           sanitizer_output_type;
+           sanitizer_requires_type;
++          sanitizer_requires_model_type;
+           sanitizer_by_side_effect;
+           not_conflicting;
+         }
+@@ -535,6 +538,7 @@
+             sanitizer_exact = false;
+             sanitizer_output_type = None;
+             sanitizer_requires_type = None;
++            sanitizer_requires_model_type = None;
+             sanitizer_by_side_effect = false;
+             R.not_conflicting = false;
+           }
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -225,6 +225,7 @@
+       sanitizer_exact;
+       sanitizer_output_type;
+       sanitizer_requires_type;
++      sanitizer_requires_model_type;
+       sanitizer_by_side_effect;
+       not_conflicting;
+     } : [> `O of (string * Yaml.value) list ] =
+@@ -240,7 +241,7 @@
+   let output = match sanitizer_output_type with None -> [] | Some kind -> [("output-value-type", `String (type_name kind))] in
+   let requires = match sanitizer_requires_type with None -> [] | Some (variable, kind) ->
+     [("requires-value-type", `O [("metavariable", `String variable); ("type", `String (type_name kind))])] in
+-  `O (List_.flatten [ san_f; exact_obj; side_effect_obj; not_conflicting_obj; output; requires ])
++  `O (List_.flatten [ san_f; exact_obj; side_effect_obj; not_conflicting_obj; output; requires; translate_model_constraint sanitizer_requires_model_type ])
+ 
+ and translate_taint_propagator
+     {
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -230,7 +230,9 @@
+        Taints.empty
+ 
+ let sanitizer_type_holds env (m : R.taint_sanitizer TM.t) =
+-  match m.spec.sanitizer_requires_type with
++  Taint_model_types.constraint_holds ~report_unresolved:false env.taint_inst.lang env.lval_env m.spec_pm.env
++    m.spec.sanitizer_requires_model_type
++  && match m.spec.sanitizer_requires_type with
+   | None -> true
+   | Some (variable, kind) -> (
+       match List.assoc_opt variable m.spec_pm.env with

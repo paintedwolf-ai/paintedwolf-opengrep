@@ -1,0 +1,13 @@
+rules:
+  - id: flow
+    languages: [python]
+    message: Input reaches a sink through assignment effects
+    severity: ERROR
+    mode: taint
+    pattern-sources:
+      - pattern: source()
+        exact: true
+    pattern-sinks:
+      - patterns:
+          - pattern: sink($VALUE)
+          - focus-metavariable: $VALUE

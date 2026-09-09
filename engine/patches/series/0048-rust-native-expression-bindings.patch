@@ -1,0 +1,26 @@
+--- a/libs/ast_generic/IdFlags.ml
++++ b/libs/ast_generic/IdFlags.ml
+@@ -42,6 +42,6 @@
+   let flags = if static then set_static flags else flags in
+   flags
+ 
+-let native_type_mask = 0x10
+-let is_native_type, set_native_type = make_flag native_type_mask
+-let clear_native_type flags = Int.logand flags (Int.lognot native_type_mask)
++let native_binding_mask = 0x10
++let is_native_binding, set_native_binding = make_flag native_binding_mask
++let clear_native_binding flags = Int.logand flags (Int.lognot native_binding_mask)
+--- a/libs/ast_generic/IdFlags.mli
++++ b/libs/ast_generic/IdFlags.mli
+@@ -61,7 +61,7 @@
+ val to_int : t -> int
+ (** Get the underlying representation of a set of flags. *)
+ 
+-val is_native_type : t -> bool
+-val set_native_type : t -> t
+-val clear_native_type : t -> t
+-(** Native type identity established by the language's type resolver. *)
++val is_native_binding : t -> bool
++val set_native_binding : t -> t
++val clear_native_binding : t -> t
++(** Native symbol identity established by the language's namespace resolver. *)

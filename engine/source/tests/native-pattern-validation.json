@@ -1,0 +1,50 @@
+[
+  {
+    "name": "native-pattern-groovy-missing-delimiter",
+    "language": "groovy",
+    "extension": ".groovy",
+    "source": "source()",
+    "pattern": "def x = (source()",
+    "valid": false
+  },
+  {
+    "name": "native-pattern-groovy-valid",
+    "language": "groovy",
+    "extension": ".groovy",
+    "source": "source()",
+    "pattern": "def x = (source())",
+    "valid": true
+  },
+  {
+    "name": "native-pattern-powershell-missing-delimiter",
+    "language": "powershell",
+    "extension": ".ps1",
+    "source": "Write-Output 'safe'",
+    "pattern": "function f { Read-Input",
+    "valid": false
+  },
+  {
+    "name": "native-pattern-powershell-valid",
+    "language": "powershell",
+    "extension": ".ps1",
+    "source": "Write-Output 'safe'",
+    "pattern": "function f { Read-Input }",
+    "valid": true
+  },
+  {
+    "name": "native-pattern-perl-missing-delimiter",
+    "language": "perl",
+    "extension": ".pl",
+    "source": "source();",
+    "pattern": "my $x = (source();",
+    "valid": false
+  },
+  {
+    "name": "native-pattern-perl-valid",
+    "language": "perl",
+    "extension": ".pl",
+    "source": "source();",
+    "pattern": "my $x = (source());",
+    "valid": true
+  }
+]

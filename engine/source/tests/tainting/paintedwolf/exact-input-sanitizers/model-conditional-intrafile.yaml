@@ -1,0 +1,62 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Flow",
+      "severity": "ERROR",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "function $F($VALUE, ...) { ... }"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "exact": true
+        },
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "patterns": [
+            {
+              "pattern": "function safe($VALUE, ...) { ... }"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "trusted"
+          }
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

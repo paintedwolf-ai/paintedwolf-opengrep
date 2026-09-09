@@ -1,0 +1,27 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Source reaches sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "(source)",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "(sink $VALUE)"
+        }
+      ],
+      "options": {
+        "taint_intrafile": false
+      }
+    }
+  ]
+}

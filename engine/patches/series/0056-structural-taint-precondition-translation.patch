@@ -1,0 +1,45 @@
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -41,6 +41,15 @@
+           seek_in chan start.pos.bytepos;
+           really_input_string chan extract_size)
+   | None -> failwith "invalid source/sink requires"
++
++let rec translate_precondition = function
++  | PLabel label -> label
++  | PBool true | PAnd [] -> "True"
++  | PBool false | POr [] -> "False"
++  | PAnd values -> "(" ^ String.concat " and " (List.map translate_precondition values) ^ ")"
++  | POr values -> "(" ^ String.concat " or " (List.map translate_precondition values) ^ ")"
++  | PNot value -> "(not " ^ translate_precondition value ^ ")"
++  | PVariable _ -> invalid_arg "Inferred taint variables cannot be translated as rule labels"
+ 
+ let translate_entropy_v2_options mode =
+   ( "options",
+@@ -172,7 +181,7 @@
+   let requires_obj =
+     match source_requires with
+     | None -> []
+-    | Some { range; _ } -> [ ("requires", `String (range_to_string range)) ]
++    | Some { precondition; _ } -> [ ("requires", `String (translate_precondition precondition)) ]
+   in
+   let exact_obj = if source_exact then [ ("exact", `Bool true) ] else [] in
+   let side_effect_obj =
+@@ -216,7 +225,7 @@
+   let requires_obj =
+     match sink_requires with
+     | None -> []
+-    | Some { range; _ } -> [ ("requires", `String (range_to_string range)) ]
++    | Some { precondition; _ } -> [ ("requires", `String (translate_precondition precondition)) ]
+   in
+   let value_path_obj =
+     match sink_value_path with
+@@ -288,7 +297,7 @@
+   let requires_obj =
+     match propagator_requires with
+     | None -> []
+-    | Some { range; _ } -> [ ("requires", `String (range_to_string range)) ]
++    | Some { precondition; _ } -> [ ("requires", `String (translate_precondition precondition)) ]
+   in
+   let replace_labels_obj =
+     match propagator_replace_labels with

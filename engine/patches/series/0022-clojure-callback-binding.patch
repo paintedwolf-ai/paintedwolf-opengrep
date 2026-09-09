@@ -1,0 +1,278 @@
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -968,6 +968,9 @@
+   let n = List.length fixed in
+   let length_op = if Option.is_some opt_rest then G.GtE else G.Eq in
+   let lc = pm_len_cond op_tok scrutinee length_op n in
++  (* Clojure clauses dispatch on argument count; nested patterns only bind values. *)
++  if env.lang =*= Lang.Clojure then ([], lc)
++  else
+   let slot_setups, slot_conds =
+     fixed
+     |> List.map (fun (p, i) ->
+@@ -4063,7 +4066,7 @@
+       (* We want to analyze any expressions in 'ty'. *)
+       let ss, _ = type_ env ty in
+       ss
+-  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang ->
++  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || env.lang =*= Lang.Clojure ->
+       (* Function values retain their closure identity at callback use sites. *)
+       let ss_lv, lv = lval_of_ent env ent in
+       let il_fdef =
+--- a/src/analyzing/Eval_il_partial.ml
++++ b/src/analyzing/Eval_il_partial.ml
+@@ -30,9 +30,14 @@
+ (*****************************************************************************)
+ (* Types *)
+ (*****************************************************************************)
+-type env = { lang : Lang.t; vars : G.svalue Dataflow_var_env.t }
+-
+-let mk_env lang vars = { lang; vars }
++type env = {
++  lang : Lang.t;
++  vars : G.svalue Dataflow_var_env.t;
++  sequence_lengths : int Dataflow_var_env.t;
++}
++
++let mk_env ?(sequence_lengths = Dataflow_var_env.VarMap.empty) lang vars =
++  { lang; vars; sequence_lengths }
+ 
+ (*****************************************************************************)
+ (* Helpers *)
+@@ -369,6 +374,10 @@
+  * Otherwise NotCst. *)
+ and eval_length memo (env : env) arg =
+   match arg.e with
++  | Fetch { base = Var name; rev_offset = [] }
++    when Dataflow_var_env.VarMap.mem (IL.str_of_name name) env.sequence_lengths ->
++      G.Lit (literal_of_int (Int64.of_int
++        (Dataflow_var_env.VarMap.find (IL.str_of_name name) env.sequence_lengths)))
+   | Composite ((CList | CTuple | CArray | CSet), (_, xs, _)) ->
+       G.Lit (literal_of_int (Int64.of_int (List.length xs)))
+   | RecordOrDict fields
+--- a/src/analyzing/Eval_il_partial.mli
++++ b/src/analyzing/Eval_il_partial.mli
+@@ -1,6 +1,6 @@
+ type env
+ 
+-val mk_env : Lang.t -> AST_generic.svalue Dataflow_var_env.t -> env
++val mk_env : ?sequence_lengths:int Dataflow_var_env.t -> Lang.t -> AST_generic.svalue Dataflow_var_env.t -> env
+ val eval : env -> IL.exp -> AST_generic.svalue
+ val eval_bool : env -> IL.exp -> bool option
+ 
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -386,10 +386,15 @@
+         in
+         record_matches (Effects.union import_effects glob_effects);
+         let model_values =
+-          Lang.is_js lang
+-          && List.exists
+-               (fun (_, source) -> Option.is_some source.R.source_model_type)
+-               spec_matches.sources
++          (Lang.is_js lang
++           && List.exists
++                (fun (_, source) -> Option.is_some source.R.source_model_type)
++                spec_matches.sources)
++          || (Lang.equal lang Lang.Clojure
++              && (List.exists (fun (_, source) -> Option.is_some source.R.source_to_parameter)
++                    spec_matches.sources
++                  || List.exists (fun (propagator : Match_taint_spec.propagator_match) -> Option.is_some propagator.spec.propagator_to_parameter)
++                    spec_matches.propagators))
+         in
+         let deferred_functions = ref IL.NameSet.empty in
+         if model_values then
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -109,6 +109,7 @@
+       (** Best matches for the taint sources/etc, see 'Taint_spec_match'. *)
+   lambda_bodies : IL.lambdas_cfgs;
+   active_lambdas : IL.NameSet.t;
++  callback_context_budget : int ref;
+   deferred_functions : IL.NameSet.t;
+   used_lambdas : IL.NameSet.t;
+       (** Set of lambda names that are *used* within the function. If a lambda
+@@ -2871,6 +2872,9 @@
+                     arity
+                 with
+                 | Some sig_ ->
++                    let sig_ = if env.taint_inst.lang =*= Lang.Clojure then
++                        { sig_ with closures = IL.NameSet.add lambda_name sig_.closures }
++                      else sig_ in
+                     let fun_shape = S.Fun sig_ in
+                     Log.debug (fun m ->
+                         m "AssignAnon: lambda %s has signature shape %s"
+@@ -3493,7 +3497,8 @@
+  * suppressing findings and signature effects recorded inside the region. *)
+ let prune_branch_if_unreachable (lang : Lang.t) (cond : IL.exp)
+     (branch_direction : bool) (in' : Lval_env.t) : Lval_env.t =
+-  let eval_env = Eval_il_partial.mk_env lang Var_env.VarMap.empty in
++  let eval_env = Eval_il_partial.mk_env
++    ~sequence_lengths:(Lval_env.sequence_lengths in') lang Var_env.VarMap.empty in
+   match Eval_il_partial.eval_bool eval_env cond with
+   | Some b when not (Bool.equal b branch_direction) ->
+       Lval_env.mark_dead in'
+@@ -3783,6 +3788,10 @@
+  *
+  * TODO: In Pro we should do inter-procedural analysis here. *)
+ and do_lambdas env (lambdas : IL.lambdas_cfgs) node =
++  let join_contexts = function
++    | [] -> Lval_env.empty
++    | first :: rest -> Lval_env.union_list ~default:first rest
++  in
+   let node_is_call =
+     (* See 'out_env' below. *)
+     match node.F.n with
+@@ -3811,7 +3820,8 @@
+     | _ -> IL.NameSet.empty
+   in
+   let available_bodies =
+-    if Lang.is_js env.taint_inst.lang then env.func.lambda_bodies else lambdas
++    if Lang.is_js env.taint_inst.lang || Lang.equal env.taint_inst.lang Lang.Clojure
++    then env.func.lambda_bodies else lambdas
+   in
+   let callback_inputs, lval_env =
+     Taint_callback_models.resolve env.lval_env available_bodies
+@@ -3835,7 +3845,7 @@
+       (fun (left, _) (right, _) -> IL.compare_name left right)
+       (direct_lambdas @ lambdas_to_analyze_in_node env lambdas node)
+     |> List.filter (fun (name, _) ->
+-           if not (Lang.is_js env.taint_inst.lang) then true
++           if not (Lang.is_js env.taint_inst.lang || Lang.equal env.taint_inst.lang Lang.Clojure) then true
+            else if
+              IL.NameSet.mem name env.func.active_lambdas
+              || IL.NameSet.cardinal env.func.active_lambdas >= 16
+@@ -3870,15 +3880,29 @@
+   let effects_lambdas, out_envs_lambdas =
+     lambdas_to_analyze
+     |> List_.map (fun (lambda_name, lambda_cfg) ->
+-           let lambda_in_env =
++           let inputs =
+              mk_lambda_in_env env lambda_cfg
+              |> Taint_callback_models.seed env.taint_inst.lang lambda_name
+                   lambda_cfg.params callback_inputs
+            in
+-           fixpoint_lambda env.taint_inst env.func needed_vars lambda_name
+-             lambda_cfg lambda_in_env ?signature_db:env.signature_db
+-             ?builtin_signature_db:env.builtin_signature_db
+-             ?call_graph:env.call_graph ())
++           let inputs =
++             let count = List.length inputs in
++             if count <= 1 then inputs
++             else if count <= !(env.func.callback_context_budget) then (
++               env.func.callback_context_budget := !(env.func.callback_context_budget) - count;
++               inputs)
++             else (
++               (match node.F.n with
++                | NInstr instruction -> Taint_model_types.call_limit instruction.iorig
++                | _ -> ());
++               [join_contexts inputs])
++           in
++           let effects, outputs = inputs |> List_.map (fun lambda_in_env ->
++             fixpoint_lambda env.taint_inst env.func needed_vars lambda_name
++               lambda_cfg lambda_in_env ?signature_db:env.signature_db
++               ?builtin_signature_db:env.builtin_signature_db
++               ?call_graph:env.call_graph ()) |> List_.split in
++           (Effects.union_list effects, join_contexts outputs))
+     |> List_.split
+   in
+   let effects = Effects.union_list effects_lambdas
+@@ -4316,6 +4340,7 @@
+                        deferred_functions = IL.NameSet.empty;
+                        lambda_bodies;
+                        active_lambdas = IL.NameSet.singleton lambda_name;
++                       callback_context_budget = ref 256;
+                      }
+                    in
+                    let lambda_effects, _lambda_mapping =
+@@ -4401,6 +4426,7 @@
+       deferred_functions;
+       lambda_bodies;
+       active_lambdas;
++      callback_context_budget = ref 256;
+     }
+   in
+   let effects, mapping =
+--- a/src/tainting/Taint_lval_env.ml
++++ b/src/tainting/Taint_lval_env.ml
+@@ -71,6 +71,7 @@
+           and exit-time emission are all suppressed; at a Join the live
+           side wins (see [union]) — so [dead = false] in the result of
+           any Join where at least one predecessor is live. *)
++  sequence_lengths : int NameMap.t;
+   reassigned_vars : IL.NameSet.t;
+       (** Variables written by an assignment on the path to the current
+           program point. A guard in [active_guards] whose condition reads
+@@ -111,6 +112,7 @@
+     pending_propagation_dests = VarMap.empty;
+     active_guards = Effect_guard.Set.empty;
+     dead = false;
++    sequence_lengths = NameMap.empty;
+     reassigned_vars = IL.NameSet.empty;
+   }
+ 
+@@ -149,6 +151,10 @@
+            * no guard that was specific to a single branch. *)
+           Effect_guard.Set.inter le1.active_guards le2.active_guards;
+         dead = false;
++        sequence_lengths = NameMap.merge (fun _ left right ->
++          match left, right with
++          | Some left, Some right when Int.equal left right -> Some left
++          | _ -> None) le1.sequence_lengths le2.sequence_lengths;
+         reassigned_vars =
+           (* UNION: a variable reassigned on either incoming path may carry
+            * a value that invalidates a guard reaching this point. *)
+@@ -436,8 +442,17 @@
+ let clear_active_guards env =
+   { env with active_guards = Effect_guard.Set.empty }
+ 
++let set_sequence_length name count env =
++  { env with sequence_lengths = NameMap.add name count env.sequence_lengths }
++
++let sequence_lengths env =
++  NameMap.fold (fun name count lengths ->
++    VarMap.add (IL.str_of_name name) count lengths)
++    env.sequence_lengths VarMap.empty
++
+ let mark_reassigned name env =
+-  { env with reassigned_vars = IL.NameSet.add name env.reassigned_vars }
++  { env with reassigned_vars = IL.NameSet.add name env.reassigned_vars;
++    sequence_lengths = NameMap.remove name env.sequence_lengths }
+ 
+ (* [active_guards] minus any guard whose condition reads a reassigned
+  * variable. Stamping uses this rather than [active_guards] directly, so a
+@@ -466,6 +481,7 @@
+       pending_propagation_dests = _;
+       active_guards = guards1;
+       dead = dead1;
++      sequence_lengths = lengths1;
+       reassigned_vars = reassigned1;
+     }
+     {
+@@ -476,6 +492,7 @@
+       pending_propagation_dests = _;
+       active_guards = guards2;
+       dead = dead2;
++      sequence_lengths = lengths2;
+       reassigned_vars = reassigned2;
+     } =
+   Bool.equal dead1 dead2
+@@ -491,6 +508,7 @@
+   && Taints.equal_with_guards control1 control2
+   && Effect_guard.Set.equal guards1 guards2
+   && IL.NameSet.equal reassigned1 reassigned2
++  && NameMap.equal Int.equal lengths1 lengths2
+ 
+ let equal_by_lval lang { tainted = tainted1; _ } { tainted = tainted2; _ } lval
+     =
+--- a/src/tainting/Taint_lval_env.mli
++++ b/src/tainting/Taint_lval_env.mli
+@@ -16,5 +16,8 @@
+ type t
+ type env = t
++
++val set_sequence_length : IL.name -> int -> env -> env
++val sequence_lengths : env -> int Dataflow_var_env.t
+ 
+ val empty : env
+ val empty_inout : env Dataflow_core.inout

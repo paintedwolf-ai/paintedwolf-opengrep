@@ -1,0 +1,7 @@
+def helper(enabled):
+    value = source()
+    if enabled:
+        # ruleid: flow
+        sink(value)
+
+helper(True)

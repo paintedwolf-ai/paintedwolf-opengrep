@@ -1,0 +1,25 @@
+diff --git a/src/tainting/Taint.ml b/src/tainting/Taint.ml
+--- a/src/tainting/Taint.ml
++++ b/src/tainting/Taint.ml
+@@ -175,7 +175,7 @@
+ 
+ let show_lval { base; offset } = show_base base ^ show_offset_list offset
+ 
+-let offset_of_IL lang (o : IL.offset) =
++let rec offset_of_IL lang (o : IL.offset) =
+ match o.o with
+ | IL.Dot n -> Ofld n
+ | IL.Index { e = IL.Literal (Int pi); _ } -> (
+@@ -212,6 +212,12 @@
+     | _ -> Ostr s)
+ | IL.Index { e = IL.Literal (String (_, (s, _), _)); _ } -> Ostr s
+ | IL.Index { e = IL.Literal (Atom (_, (s, _))); _ } -> Ostr s
++| IL.Index { e = IL.Fetch { base = IL.Var name; rev_offset = [] }; _ } -> (
++    match !(name.id_info.id_svalue) with
++    | Some (G.Lit literal) ->
++        offset_of_IL lang
++          { o with o = IL.Index { e = IL.Literal literal; eorig = IL.NoOrig } }
++    | _ -> Oany)
+ | IL.Index _ -> Oany
+ | IL.Slice n -> Oslice n
+ 

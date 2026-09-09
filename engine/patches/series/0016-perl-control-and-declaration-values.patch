@@ -1,0 +1,23 @@
+diff --git a/src/analyzing/AST_to_IL.ml b/src/analyzing/AST_to_IL.ml
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -3504,6 +3504,9 @@
+     | Some e_gen -> todo (G.E e_gen)
+   in
+   match st.G.s with
++  | G.Break (tok, _, _) | G.Continue (tok, _, _) ->
++      (* Abrupt control has no reachable expression result. *)
++      (stmt env st, mk_unit tok (Related (G.S st)))
+   | G.ExprStmt (eorig, tok) ->
+       let ss, e = expr env eorig in
+       if effective_implicit_return env eorig then
+@@ -3572,7 +3575,8 @@
+       let ss_unit, unit_e = expr_opt env t None in
+       (ss_e @ [ret_stmt] @ ss_unit, unit_e)
+   | G.DefStmt (ent, G.VarDef { G.vinit = Some e; vtype = opt_ty; vtok = _ })
+-    when def_expr_evaluates_to_value env.lang ->
++    when def_expr_evaluates_to_value env.lang
++      || (env.lang =*= Lang.Perl && (match ent.G.name with G.EN _ -> true | _ -> false)) ->
+       let ss_ty, () = type_opt env opt_ty in
+       (* We may end up here due to Elixir_to_elixir's parsing. Other languages
+        * such as Ruby, Julia, and C seem to result in Assignments, not DefStmts.

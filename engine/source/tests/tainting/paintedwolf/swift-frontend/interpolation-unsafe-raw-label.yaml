@@ -1,0 +1,31 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "swift"
+      ],
+      "severity": "ERROR",
+      "message": "Swift interpolation and closure flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

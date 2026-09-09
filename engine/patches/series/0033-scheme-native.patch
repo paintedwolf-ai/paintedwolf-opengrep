@@ -1,0 +1,285 @@
+diff --git a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
+--- a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
++++ b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
+@@ -66,7 +66,7 @@
+   | Quoted
+   | Syntax_quoted
+ 
+-type dialect = Clojure | CommonLisp | Scheme
++type dialect = Clojure | CommonLisp
+ 
+ type extra = {
+   dialect: dialect;
+@@ -713,25 +713,11 @@
+   | `Sym_lit (_, ((_, "defun") as head)) :: `Sym_lit (_, name) :: params :: body
+       when env.extra.dialect =*= CommonLisp ->
+       lisp_definition env (token env head) name (lisp_list_forms env params) body
+-  | `Sym_lit (_, ((_, "define") as head)) :: signature :: body
+-      when env.extra.dialect =*= Scheme ->
+-      (match signature with
+-       | `List_lit _ ->
+-           (match lisp_list_forms env signature with
+-            | `Sym_lit (_, name) :: params -> lisp_definition env (token env head) name params body
+-            | _ -> raise_parse_error "Unsupported Scheme definition")
+-       | `Sym_lit (_, name) ->
+-           (match body with
+-            | [value] -> G.DefStmt (G.basic_entity (H.str env name),
+-                G.VarDef {G.vinit = Some (map_form env value); vtype = None; vtok = G.no_sc}) |> G.s |> G.stmt_to_expr
+-            | _ -> raise_parse_error "Unsupported Scheme definition")
+-       | _ -> raise_parse_error "Unsupported Scheme definition")
+   | `Sym_lit (_, ((_, "lambda") as head)) :: params :: body ->
+       G.Lambda (lisp_function env (token env head) (lisp_list_forms env params) body) |> G.e
+   | `Sym_lit (_, ((_, ("let" | "let*" as form)) as head)) :: bindings :: body ->
+       lisp_bindings env (token env head) (form = "let*") (lisp_list_forms env bindings) body
+   | `Sym_lit (_, (_, "quote")) :: _ -> map_quote_form env forms
+-  | `Sym_lit (_, (_, "begin")) :: body when env.extra.dialect =*= Scheme -> lisp_body env body
+   | `Sym_lit (_, (_, "progn")) :: body when env.extra.dialect =*= CommonLisp -> lisp_body env body
+   | `Sym_lit (_, ((_, "if") as head)) :: condition :: yes :: rest ->
+       let no = match rest with
+@@ -740,8 +726,8 @@
+         | _ -> raise_parse_error "Unsupported Lisp conditional" in
+       G.If (token env head, G.Cond (map_form env condition), G.exprstmt (map_form env yes), no)
+       |> G.s |> G.stmt_to_expr
+-  | `Sym_lit (_, ((_, ("set!" | "setq" as form)) as head)) :: `Sym_lit (_, name) :: [value]
+-      when (form = "set!" && env.extra.dialect =*= Scheme) || (form = "setq" && env.extra.dialect =*= CommonLisp) ->
++  | `Sym_lit (_, ((_, "setq") as head)) :: `Sym_lit (_, name) :: [value]
++      when env.extra.dialect =*= CommonLisp ->
+       G.Assign (G.N (G.Id (H.str env name, G.empty_id_info ())) |> G.e, token env head, map_form env value) |> G.e
+   | `Sym_lit (_, (_, ("flet" | "labels" | "macrolet" | "symbol-macrolet" | "defmacro"
+       | "defmethod" | "defgeneric" | "destructuring-bind" | "multiple-value-bind"
+diff --git a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.mli b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.mli
+--- a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.mli
++++ b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.mli
+@@ -1,4 +1,4 @@
+-type dialect = Clojure | CommonLisp | Scheme
++type dialect = Clojure | CommonLisp
+ 
+ val parse :
+   dialect:dialect -> Fpath.t -> (AST_generic.program, unit) Tree_sitter_run.Parsing_result.t
+diff --git a/src/analyzing/AST_to_IL.ml b/src/analyzing/AST_to_IL.ml
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -3578,6 +3578,9 @@
+     | Some e_gen -> todo (G.E e_gen)
+   in
+   match st.G.s with
++  | G.DefStmt ({G.name=G.EN (G.Id ((_, tok), _)); _}, (G.FuncDef _ | G.VarDef _))
++    when env.lang =*= Lang.Scheme ->
++      (stmt env st, mk_unit tok (Related (G.S st)))
+   | G.Break (tok, _, _) | G.Continue (tok, _, _) ->
+       (* Abrupt control has no reachable expression result. *)
+       (stmt env st, mk_unit tok (Related (G.S st)))
+@@ -4109,7 +4112,7 @@
+       (* We want to analyze any expressions in 'ty'. *)
+       let ss, _ = type_ env ty in
+       ss
+-  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || env.lang =*= Lang.Clojure ->
++  | G.DefStmt (ent, G.FuncDef fdef) when env.inside_function || Lang.is_js env.lang || List.mem env.lang [Lang.Clojure; Lang.Scheme] ->
+       (* Function values retain their closure identity at callback use sites. *)
+       let ss_lv, lv = lval_of_ent env ent in
+       let il_fdef =
+diff --git a/src/analyzing/Eval_il_partial.ml b/src/analyzing/Eval_il_partial.ml
+--- a/src/analyzing/Eval_il_partial.ml
++++ b/src/analyzing/Eval_il_partial.ml
+@@ -424,6 +424,8 @@
+ 
+ let bool_of_svalue env = function
+   | G.Lit (G.Bool (value, _)) -> Some value
++  | G.Lit _ when Lang.equal env.lang Lang.Scheme -> Some true
++  | G.Cst (G.Cint | G.Cstr) when Lang.equal env.lang Lang.Scheme -> Some true
+   | G.Lit (G.Int (Some value, _)) when Lang.equal env.lang Lang.Perl ->
+       Some (not (Int64.equal value 0L))
+   | G.Lit (G.Float (Some value, _)) when Lang.equal env.lang Lang.Perl ->
+@@ -444,7 +446,7 @@
+   match exp.e with
+   | IL.Operator ((G.Not, _), [IL.Unnamed value]) ->
+       Option.map not (eval_bool env value)
+-  | IL.Composite _ | IL.RecordOrDict _ when Lang.equal env.lang Lang.Clojure ->
++  | IL.Composite _ | IL.RecordOrDict _ when Lang.equal env.lang Lang.Clojure || Lang.equal env.lang Lang.Scheme ->
+       Some true
+   | _ -> bool_of_svalue env (eval env exp)
+ 
+diff --git a/src/engine/Match_tainting_mode.ml b/src/engine/Match_tainting_mode.ml
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -399,7 +399,7 @@
+            && List.exists
+                 (fun (_, source) -> Option.is_some source.R.source_model_type)
+                 spec_matches.sources)
+-          || (Lang.equal lang Lang.Clojure
++          || (List.mem lang [Lang.Clojure; Lang.Scheme]
+               && (List.exists (fun (_, source) -> Option.is_some source.R.source_to_parameter)
+                     spec_matches.sources
+                   || List.exists (fun (propagator : Match_taint_spec.propagator_match) -> Option.is_some propagator.spec.propagator_to_parameter)
+diff --git a/src/main/flags.sh b/src/main/flags.sh
+--- a/src/main/flags.sh
++++ b/src/main/flags.sh
+@@ -148,6 +148,7 @@
+             "-lnative_groovy_stubs"
+             "-lnative_powershell_stubs"
+             "-lnative_perl_stubs"
++            "-lnative_scheme_stubs"
+             "-lANSITerminal_stubs"
+             "-lalcotest_stubs"
+             "-lbase_internalhash_types_stubs"
+diff --git a/src/naming/Naming_AST.ml b/src/naming/Naming_AST.ml
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -572,6 +572,7 @@
+   let sid =
+     match (lang, !(id_info.id_resolved)) with
+     | Lang.Dart, Some (Global, sid) -> sid
++    | Lang.Scheme, Some ((Global | LocalVar), sid) -> sid
+     | _ -> SId.mk ()
+   in
+   (* for the type, we use the (optional) type in vtype, or, if we can infer
+@@ -594,6 +595,18 @@
+   add_ident_to_its_scope id resolved env.names;
+   set_resolved env id_info resolved
+ 
++let rec predeclare_scheme_expr env expression =
++  match expression.e with
++  | Seq expressions -> List.iter (predeclare_scheme_expr env) expressions
++  | StmtExpr statement -> predeclare_scheme_stmt env statement
++  | _ -> ()
++and predeclare_scheme_stmt env statement =
++  match statement.s with
++  | DefStmt ({name=EN (Id (id, info)); _}, _) ->
++      declare_var env Lang.Scheme id info ~explicit:true None None
++  | ExprStmt (expression, _) -> predeclare_scheme_expr env expression
++  | _ -> ()
++
+ let set_resolved_global_if_not_already_resolved env ?vinit id id_info =
+   (* Used for all clojure non-auto-resolved atoms which we consider globals. *)
+   if
+@@ -641,6 +654,9 @@
+       let new_params = params_of_parameters env x.fparams in
+       with_new_context InFunction env (fun () ->
+           with_new_function_scope new_params env.names (fun () ->
++              (if lang =*= Lang.Scheme then match x.fbody with
++                | FBExpr expression -> predeclare_scheme_expr env expression
++                | _ -> ());
+               (* Each [ParamPattern]'s synthetic implicit binder was just
+                * registered as a Parameter in [new_params]. The inner
+                * pattern's leaves still need to be declared in the
+@@ -814,6 +830,8 @@
+            *
+            *     https://github.com/semgrep/semgrep/issues/2787.
+            *)
++          | Lang.Scheme ->
++              declare_var env lang id id_info ~explicit:true None None
+           | Lang.Powershell ->
+               let sid = SId.mk () in
+               let resolved = untyped_ent (resolved_name_kind env lang, sid) in
+@@ -903,7 +921,7 @@
+       | ImportFrom (_, FileName (s, tok), imported_names) ->
+           List.iter
+             (function
+-              | id, alias when lang =*= Lang.Dart ->
++              | id, alias when lang =*= Lang.Dart || lang =*= Lang.Scheme ->
+                   let binding, id_info = Option.value
+                       ~default:(id, empty_id_info ()) alias in
+                   let resolved = untyped_ent
+@@ -1301,23 +1319,24 @@
+                  List.iter (fun stmt -> self#visit_stmt venv stmt) stmts) *)
+       | Block (_, stmts, _) when List.mem lang [Lang.Lisp; Lang.Scheme; Lang.Ocaml; Lang.Cairo; Lang.Groovy; Lang.Perl] ->
+           with_new_block_scope env.names (fun () ->
++              if lang =*= Lang.Scheme then List.iter (predeclare_scheme_stmt env) stmts;
+               List.iter (fun stmt -> self#visit_stmt venv stmt) stmts)
+       | _else_ -> super#visit_stmt venv x
+   end
+   
+-let predeclare_dart_globals env program =
++let predeclare_globals env lang program =
+   List.iter
+     (fun statement ->
+       match statement.s with
+       | DefStmt ({ name = EN (Id (id, info)); _ }, _)
+       | DefStmt ({ name = EPattern (PatId (id, info)); _ }, _) ->
+-          declare_var env Lang.Dart id info ~force_global:true ~explicit:true None None
++          declare_var env lang id info ~force_global:true ~explicit:true None None
+       | _ -> ())
+     program
+ 
+ let resolve lang prog =
+   let env = default_env lang in
+-  if lang =*= Lang.Dart then predeclare_dart_globals env prog;
++  if List.mem lang [Lang.Dart; Lang.Scheme] then predeclare_globals env lang prog;
+ 
+   (* coupling: we do similar things in Constant_propagation.ml so if you
+    * add a feature here, you might want to add a similar thing over there too.
+diff --git a/src/parsing_languages/Parse_pattern2.ml b/src/parsing_languages/Parse_pattern2.ml
+--- a/src/parsing_languages/Parse_pattern2.ml
++++ b/src/parsing_languages/Parse_pattern2.ml
+@@ -167,12 +167,12 @@
+   | Lang.Xml ->
+       let res = Parse_html_tree_sitter.parse_pattern str in
+       extract_pattern_from_tree_sitter_result res
++  | Lang.Scheme ->
++      extract_pattern_from_tree_sitter_result (Parse_scheme_native.parse_pattern str)
+   | Lang.Lisp
+-  | Lang.Scheme
+   | Lang.Clojure ->
+       let dialect = match lang with
+         | Lang.Lisp -> Parse_clojure_tree_sitter.CommonLisp
+-        | Lang.Scheme -> Parse_clojure_tree_sitter.Scheme
+         | _ -> Parse_clojure_tree_sitter.Clojure in
+       let res = Parse_clojure_tree_sitter.parse_pattern ~dialect str in
+       extract_pattern_from_tree_sitter_result res
+diff --git a/src/parsing_languages/Parse_target2.ml b/src/parsing_languages/Parse_target2.ml
+--- a/src/parsing_languages/Parse_target2.ml
++++ b/src/parsing_languages/Parse_target2.ml
+@@ -207,12 +207,12 @@
+       run file [ TreeSitter Parse_julia_tree_sitter.parse ] (fun x -> x)
+   | Lang.Kotlin ->
+       run file [ TreeSitter Parse_kotlin_tree_sitter.parse ] (fun x -> x)
++  | Lang.Scheme ->
++      native_parse_result file (Parse_scheme_native.parse file)
+   | Lang.Lisp
+-  | Lang.Scheme
+   | Lang.Clojure ->
+       let dialect = match lang with
+         | Lang.Lisp -> Parse_clojure_tree_sitter.CommonLisp
+-        | Lang.Scheme -> Parse_clojure_tree_sitter.Scheme
+         | _ -> Parse_clojure_tree_sitter.Clojure in
+       run file [ TreeSitter (Parse_clojure_tree_sitter.parse ~dialect) ] (fun x -> x)
+   | Lang.Lua -> run file [ TreeSitter Parse_lua_tree_sitter.parse ] (fun x -> x)
+diff --git a/src/parsing_languages/dune b/src/parsing_languages/dune
+--- a/src/parsing_languages/dune
++++ b/src/parsing_languages/dune
+@@ -9,7 +9,7 @@
+  (wrapped false)
+  (libraries
+    commons
+-   semgrep.native_groovy semgrep.native_powershell semgrep.native_perl
++   semgrep.native_groovy semgrep.native_powershell semgrep.native_perl semgrep.native_scheme
+    semgrep.parsing
+ 
+    ; has an xxx.ast, xxx.menhir, xxx.tree_sitter, xxx.generic
+diff --git a/src/tainting/Dataflow_tainting.ml b/src/tainting/Dataflow_tainting.ml
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -2878,9 +2878,8 @@
+                     arity
+                 with
+                 | Some sig_ ->
+-                    let sig_ = if env.taint_inst.lang =*= Lang.Clojure then
+-                        { sig_ with closures = IL.NameSet.add lambda_name sig_.closures }
+-                      else sig_ in
++                    let sig_ =
++                      { sig_ with closures = IL.NameSet.add lambda_name sig_.closures } in
+                     let fun_shape = S.Fun sig_ in
+                     Log.debug (fun m ->
+                         m "AssignAnon: lambda %s has signature shape %s"
+@@ -3828,10 +3827,7 @@
+         | _ -> IL.NameSet.empty)
+     | _ -> IL.NameSet.empty
+   in
+-  let available_bodies =
+-    if Lang.is_js env.taint_inst.lang || Lang.equal env.taint_inst.lang Lang.Clojure
+-    then env.func.lambda_bodies else lambdas
+-  in
++  let available_bodies = env.func.lambda_bodies in
+   let callback_inputs, lval_env =
+     Taint_callback_models.resolve env.lval_env available_bodies
+       !(env.callback_requests)

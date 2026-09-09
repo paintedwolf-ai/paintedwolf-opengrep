@@ -1,0 +1,15 @@
+rules:
+- id: flow
+  languages: [python]
+  severity: ERROR
+  message: Preserve named argument binding after omitted defaults
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE

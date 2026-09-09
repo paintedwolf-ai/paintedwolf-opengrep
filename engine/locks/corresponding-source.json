@@ -1,0 +1,301 @@
+{
+  "artifact_version": "1.30.0+paintedwolf.32",
+  "retained": [
+    {
+      "id": "native/gmp",
+      "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer",
+        "relink"
+      ],
+      "revision": null,
+      "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
+      "sha512": null,
+      "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz"
+    },
+    {
+      "id": "ocaml/ANSITerminal-0.8.5",
+      "license": "LGPL-3.0 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "ab73b218b6a30267d2bbc43312dcf313981b8b0bec555d92b06b87664b2dd30e",
+      "sha512": "8ddd766c007bf66d6a6d1ce0f68ad55e18e82f439fdec6c0387f18f6a5e8c87bb2d7b595cbdab5acf9a5cf76efa73b8e8921481a5028774dcd9d2d9fe544603e",
+      "url": "https://github.com/Chris00/ANSITerminal/releases/download/0.8.5/ANSITerminal-0.8.5.tbz"
+    },
+    {
+      "id": "ocaml/calendar-3.0.0",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "cf8a5cfbfb8879da7bcacf765d5461523cbc4f0c13133dfb2f311b051ed95b5f72815af5ca2836294a793d9b57bfc4cc1abbb8b54e17954cb4ecc99e1743bdc3",
+      "url": "https://github.com/ocaml-community/calendar/archive/refs/tags/v3.0.0.tar.gz"
+    },
+    {
+      "id": "ocaml/camlp-streams-5.0.1",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "2efa8dd4a636217c8d49bac1e4e7e5558fc2f45cfea66514140a59fd99dd08d61fb9f1e17804997ff648b71b13820a5d4a1eb70fed9d848aa2abd6e41f853c86",
+      "url": "https://github.com/ocaml/camlp-streams/archive/v5.0.1.tar.gz"
+    },
+    {
+      "id": "ocaml/fileutils-0.6.6",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "796d5791e2bf7b3bff200cf5057a7a1878439ebcd74ed0f1088cf86756d52be6",
+      "sha512": "ecc38b1577ab108bd24d1e9f0e83596254e542eefb37020dedcff7ca0109e562411cbb9806fbc6f88f4166569bf061a444971388c26950ec02dfc48b35daed90",
+      "url": "https://github.com/gildor478/ocaml-fileutils/releases/download/v0.6.6/fileutils-0.6.6.tbz"
+    },
+    {
+      "id": "ocaml/js_of_ocaml-6.4.1",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "e59bbffcaefaba3191620556514b7f53bb3249e3f881a070d72724234dffd819",
+      "sha512": "bb470f316f9c81a3b2b8dedd0b0f18f8e06beb48dd70df1d9f846de90ffab439cab5ef7a93a8166af0998068b06097e8319bc0d9f4f23a7159b0de8b3b515746",
+      "url": "https://github.com/ocsigen/js_of_ocaml/releases/download/6.4.1/js_of_ocaml-6.4.1.tbz"
+    },
+    {
+      "id": "ocaml/js_of_ocaml-compiler-6.4.1",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "e59bbffcaefaba3191620556514b7f53bb3249e3f881a070d72724234dffd819",
+      "sha512": "bb470f316f9c81a3b2b8dedd0b0f18f8e06beb48dd70df1d9f846de90ffab439cab5ef7a93a8166af0998068b06097e8319bc0d9f4f23a7159b0de8b3b515746",
+      "url": "https://github.com/ocsigen/js_of_ocaml/releases/download/6.4.1/js_of_ocaml-6.4.1.tbz"
+    },
+    {
+      "id": "ocaml/memprof-limits-dev",
+      "license": "LGPL-3.0 WITH LGPL-3.0-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": "c2cced325a93d2271379f0712db85867b29dbee1",
+      "sha256": null,
+      "sha512": null,
+      "url": "https://gitlab.com/dimitris-m/memprof-limits.git"
+    },
+    {
+      "id": "ocaml/menhirLib-20230608",
+      "license": "LGPL-2.0 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "334b9dcb1283a28b8547082a89536b1d439ff588290b8eaecdf4802c5f74dbc8d16ad6fc6c0820036183518d83e2cc273a75787a8b41137424c8e7ee82e2b50a",
+      "url": "https://gitlab.inria.fr/fpottier/menhir/-/archive/20230608/archive.tar.gz"
+    },
+    {
+      "id": "ocaml/menhirSdk-20230608",
+      "license": "LGPL-2.0 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "334b9dcb1283a28b8547082a89536b1d439ff588290b8eaecdf4802c5f74dbc8d16ad6fc6c0820036183518d83e2cc273a75787a8b41137424c8e7ee82e2b50a",
+      "url": "https://gitlab.inria.fr/fpottier/menhir/-/archive/20230608/archive.tar.gz"
+    },
+    {
+      "id": "ocaml/num-1.6",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "b5cce325449aac746d5ca963d84688a627cca5b38d41e636cf71c68b60495b3e",
+      "sha512": "5cb32dfa9a9f0ad375bfd89079e9b1422979f3c089f61ef2300ad9cc64fb1fc25ed1f86b0267eb017f12ae41a574a959df5bfa39ab22c2be2f1ac84c3c671bdf",
+      "url": "https://github.com/ocaml/num/archive/refs/tags/v1.6.tar.gz"
+    },
+    {
+      "id": "ocaml/ocaml-5.5.1",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": "no distributed archive; source is carried by another component",
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": null,
+      "url": null
+    },
+    {
+      "id": "ocaml/ocaml-base-compiler-5.5.1",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": "no distributed archive; source is carried by another component",
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": null,
+      "url": null
+    },
+    {
+      "id": "ocaml/ocaml-compiler-5.5.1",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "ae47728d0a876665ccc7b745e3a8d8c9ca5ba63c4f7a11d4db6cdbd1dbeef4bb",
+      "sha512": null,
+      "url": "https://github.com/ocaml/ocaml/releases/download/5.5.1/ocaml-5.5.1.tar.gz"
+    },
+    {
+      "id": "ocaml/ocamlgraph-2.2.0",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "b0956210863cc24f480203ba3c2ef06dfae5579536a05744364e7de58822b230",
+      "sha512": "257cdd5fb90337b3e3682cade1269c1d181f3124e569a731909f49bbfbe581ab529ac401472fb9ef57166ac34d8ebadfa6a32c93665f38f5a335982d5e5dc0e1",
+      "url": "https://github.com/backtracking/ocamlgraph/releases/download/2.2.0/ocamlgraph-2.2.0.tbz"
+    },
+    {
+      "id": "ocaml/ocplib-endian-1.2",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "2e70be5f3d6e377485c60664a0e235c3b9b24a8d6b6a03895d092c6e40d53810bfe1f292ee69e5181ce6daa8a582bfe3d59f3af889f417134f658812be5b8b85",
+      "url": "https://github.com/OCamlPro/ocplib-endian/archive/refs/tags/1.2.tar.gz"
+    },
+    {
+      "id": "ocaml/re-1.14.0",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "cd2cc39f951ca6b7be631bbb5531ed13bc040e629842671bf6fef3911b20ef1653fa9a1f0aa23b094d252cffc9a9efe7ffca69e50d362ab935bc0cc447548124",
+      "url": "https://github.com/ocaml/ocaml-re/archive/refs/tags/1.14.0.tar.gz"
+    },
+    {
+      "id": "ocaml/stdlib-shims-0.3.0",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "babf72d3917b86f707885f0c5528e36c63fccb698f4b46cf2bab5c7ccdd6d84a",
+      "sha512": "1151d7edc8923516e9a36995a3f8938d323aaade759ad349ed15d6d8501db61ffbe63277e97c4d86149cf371306ac23df0f581ec7e02611f58335126e1870980",
+      "url": "https://github.com/ocaml/stdlib-shims/releases/download/0.3.0/stdlib-shims-0.3.0.tbz"
+    },
+    {
+      "id": "ocaml/visitors-20260520",
+      "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": null,
+      "sha512": "a8a008f18ef2c7cf77d9e7978bdfde322d3d62a52ce70af2fa0169c36f979a515b6edacf8af2b718d0f49bb3f0c52155366ff450e41fe6b71b8ccc1439dfc812",
+      "url": "https://gitlab.inria.fr/fpottier/visitors/-/archive/20260520/archive.tar.gz"
+    },
+    {
+      "id": "ocaml/zarith-1.14",
+      "license": "LGPL-2.0 WITH OCaml-LGPL-linking-exception",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "5db9dcbd939153942a08581fabd846d0f3f2b8c67fe68b855127e0472d4d1859",
+      "sha512": "8a7f3e82dfa5699c8dda54dd5398c712f3ac4fe04f5208d43d8ba198fb8152de5f91cbb59c15c0a4ba010d4dfcc79f52e405bdd0abbf2798167e9e4216bcb3dd",
+      "url": "https://github.com/ocaml/Zarith/archive/release-1.14.tar.gz"
+    },
+    {
+      "id": "python/certifi",
+      "license": "MPL-2.0",
+      "note": null,
+      "obligations": [
+        "notice",
+        "license-text",
+        "source-offer"
+      ],
+      "revision": null,
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+      "sha512": null,
+      "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl"
+    }
+  ],
+  "schema_version": 1
+}

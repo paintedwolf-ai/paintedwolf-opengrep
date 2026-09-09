@@ -1,0 +1,226 @@
+diff --git a/src/rule/Rule.ml b/src/rule/Rule.ml
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -312,6 +312,8 @@
+        * The sink will only trigger a finding if the data that reaches it
+        * has a set of labels attached that satisfies the 'requires'.
+        *)
++  sink_value_path : int list;
++      (** Array indices selecting the consumed value inside the focused sink. *)
+   sink_at_exit : bool;
+       (* Whether this sink only applies to instructions at exit positions. *)
+   sink_has_focus : bool;
+diff --git a/src/parsing/Parse_rule.ml b/src/parsing/Parse_rule.ml
+--- a/src/parsing/Parse_rule.ml
++++ b/src/parsing/Parse_rule.ml
+@@ -332,10 +332,16 @@
+       then error_at_key env.id key "to-parameter requires index 0..31 and up to 16 nonempty field names"
+       else Ok { R.index; path; arities; array_elements; array_head_callable; preserves_array }
+ 
++let reject_sink_value_path env key (dict : dict) =
++  if Hashtbl.mem dict.h "value-path" then
++    error_at_key env.id key "value-path is only valid on taint sinks"
++  else Ok ()
++
+ let parse_taint_source ~(is_old : bool) env (key : key) (value : G.expr) :
+     (Rule.taint_source, Rule_error.t) result =
+   let source_id = "source:" ^ String.concat ":" env.path in
+   let parse_from_dict dict f =
++    let/ () = reject_sink_value_path env key dict in
+     let/ source_exact =
+       take_opt dict env parse_bool "exact"
+       |> Result.map (Option.value ~default:false)
+@@ -422,6 +428,7 @@
+     else Parse_rule_formula.parse_formula_from_dict
+   in
+   let parse_from_dict dict f =
++    let/ () = reject_sink_value_path env key dict in
+     let/ propagator_from_model_type = take_opt dict env parse_model_type "from-model-type" in
+     let/ propagator_from_model_member = take_opt dict env parse_model_type "from-model-member" in
+     let/ () = if Option.is_some propagator_from_model_member && Option.is_none propagator_from_model_type then error_at_key env.id key "from-model-member requires from-model-type" else Ok () in
+@@ -475,6 +482,7 @@
+ let parse_taint_sanitizer ~(is_old : bool) env (key : key) (value : G.expr) =
+   let sanitizer_id = "sanitizer:" ^ String.concat ":" env.path in
+   let parse_from_dict dict f =
++    let/ () = reject_sink_value_path env key dict in
+     let/ sanitizer_exact =
+       take_opt dict env parse_bool "exact"
+       |> Result.map (Option.value ~default:false)
+@@ -533,6 +541,22 @@
+     | Right dict ->
+         parse_from_dict dict Parse_rule_formula.parse_formula_from_dict
+ 
++let parse_sink_value_path env key value =
++  let index env expression =
++    match expression.G.e with
++    | G.L (Int (Some number, _))
++      when Int64.compare number 0L >= 0 && Int64.compare number 2147483647L <= 0 ->
++        Ok (Int64.to_int number)
++    | G.L (Float (Some number, _))
++      when number >= 0. && number <= 2147483647. && Float.is_integer number ->
++        Ok (int_of_float number)
++    | _ -> error_at_key env.id key "value-path indices must be nonnegative integers at most 2147483647"
++  in
++  let/ path = parse_listi env key index value in
++  if List.is_empty path || List.length path > 16 then
++    error_at_key env.id key "value-path requires between 1 and 16 array indices"
++  else Ok path
++
+ let parse_taint_sink ~(is_old : bool) env (key : key) (value : G.expr) :
+     (Rule.taint_sink, Rule_error.t) result =
+   let sink_id = "sink:" ^ String.concat ":" env.path in
+@@ -547,8 +571,18 @@
+       take_opt dict env parse_bool "exact"
+       |> Result.map (Option.value ~default:true)
+     in
++    let/ sink_value_path =
++      take_opt dict env parse_sink_value_path "value-path"
++      |> Result.map (Option.value ~default:[])
++    in
+     let/ sink_formula = f env dict in
+     let sink_has_focus = Rule.is_formula_with_focus sink_formula in
++    let/ () =
++      if not (List.is_empty sink_value_path)
++         && (not sink_has_focus || not sink_exact || sink_at_exit) then
++        error_at_key env.id key "value-path requires an exact focused sink without at-exit"
++      else Ok ()
++    in
+     Ok
+       Rule.
+         {
+@@ -557,6 +591,7 @@
+           sink_exact;
+           sink_requires;
+           sink_requires_model_type;
++          sink_value_path;
+           sink_at_exit;
+           sink_has_focus;
+         }
+@@ -579,6 +614,7 @@
+               sink_exact = true;
+               sink_requires = None;
+               sink_requires_model_type = None;
++              sink_value_path = [];
+               sink_at_exit = false;
+               sink_has_focus;
+             }
+diff --git a/src/metachecking/Translate_rule.ml b/src/metachecking/Translate_rule.ml
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -179,6 +179,7 @@
+       sink_exact;
+       sink_requires;
+       sink_requires_model_type;
++      sink_value_path;
+       sink_at_exit;
+       sink_has_focus = _;
+     } : [> `O of (string * Yaml.value) list ] =
+@@ -190,7 +191,12 @@
+     | None -> []
+     | Some { range; _ } -> [ ("requires", `String (range_to_string range)) ]
+   in
+-  `O (List_.flatten [ sink_f; exact_obj; requires_obj; at_exit_obj; translate_model_constraint sink_requires_model_type ])
++  let value_path_obj =
++    match sink_value_path with
++    | [] -> []
++    | path -> [ ("value-path", `A (List_.map (fun i -> `Float (float_of_int i)) path)) ]
++  in
++  `O (List_.flatten [ sink_f; value_path_obj; exact_obj; requires_obj; at_exit_obj; translate_model_constraint sink_requires_model_type ])
+ 
+ and translate_taint_sanitizer
+     {
+diff --git a/src/tainting/Dataflow_tainting.ml b/src/tainting/Dataflow_tainting.ml
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -691,27 +691,26 @@
+             ])
+ 
+ (* Produces a finding for every unifiable source-sink pair. *)
+-let effects_of_tainted_sinks env taints sinks : Effect.t list =
+-  let taints =
+-    let control_taints = Lval_env.get_control_taints env.lval_env in
+-    taints |> Taints.union control_taints
+-  in
+-  if Taints.is_empty taints then []
+-  else
+-    sinks
+-    |> List.concat_map (fun sink ->
+-           (* This is where all taint effects start. If it's interproc,
+-              the call trace will be later augmented into the Call variant,
+-              but it starts out here as just a PM variant.
+-           *)
+-           let taints_with_traces =
+-             taints |> Taints.elements
+-             |> List_.map (fun (b : T.guarded_taint) ->
+-                    { Effect.taint = b.taint;
+-                      sink_trace = T.PM (sink.Effect.pm, ());
+-                      guard = b.guard })
+-           in
+-           effects_of_tainted_sink env taints_with_traces sink)
++let effects_of_tainted_sinks env ?(shape = S.Bot) taints sinks : Effect.t list =
++  sinks
++  |> List.concat_map (fun sink ->
++         let offsets = List_.map (fun i -> T.Oint i) sink.Effect.rule_sink.R.sink_value_path in
++         let selected_taints =
++           match Shape.find_in_shape_poly ~taints offsets shape with
++           | None -> Taints.empty
++           | Some (taints, shape) -> add_taints_from_shape shape taints
++         in
++         let taints =
++           Taints.union selected_taints (Lval_env.get_control_taints env.lval_env)
++         in
++         let taints_with_traces =
++           taints |> Taints.elements
++           |> List_.map (fun (b : T.guarded_taint) ->
++                  { Effect.taint = b.taint;
++                    sink_trace = T.PM (sink.Effect.pm, ());
++                    guard = b.guard })
++         in
++         effects_of_tainted_sink env taints_with_traces sink)
+ 
+ let effects_of_tainted_return env taints shape return_tok : Effect.t list =
+   let control_taints = get_control_taints_to_return env in
+@@ -1055,7 +1054,6 @@
+    * `sink` could potentially access "tainted". So we must take into account
+    * all taints reachable through its shape.
+    *)
+-  let taints = taints |> add_taints_from_shape shape in
+   let sinks = orig_is_best_sink env orig in
+   let sinks =
+     match filter_sinks with
+@@ -1080,7 +1078,7 @@
+         range_str
+         (Taints.cardinal taints) (List.length sinks)
+         (if Taints.is_empty taints || List.is_empty sinks then 0 else 1));
+-  let effects = effects_of_tainted_sinks env taints sinks in
++  let effects = effects_of_tainted_sinks env ~shape taints sinks in
+   record_effects env effects
+ 
+ let fix_poly_taint_with_field lang lval xtaint =
+@@ -1426,7 +1424,7 @@
+     |> List_.map TM.sink_of_match
+   in
+   if (not (Taints.is_empty taints)) && not (List.is_empty sinks) then ();
+-  let effects = effects_of_tainted_sinks { env with lval_env } taints sinks in
++  let effects = effects_of_tainted_sinks { env with lval_env } ~shape:lval_shape taints sinks in
+   record_effects { env with lval_env } effects;
+   (taints, lval_shape, sub, lval_env)
+ 
+@@ -1681,7 +1679,7 @@
+       in
+       let all_taints = Taints.union taints_from_env new_taints in
+       let effects =
+-        effects_of_tainted_sinks { env with lval_env } all_taints sinks
++        effects_of_tainted_sinks { env with lval_env } ~shape:lval_shape all_taints sinks
+       in
+       record_effects { env with lval_env } effects;
+       ( new_taints,
+@@ -3138,7 +3136,7 @@
+     (* TODO: Clean shape as well based on type ? *)
+     check_type_and_drop_taints_if_bool_or_number env taints type_of_expr e
+   in
+-  let effects = effects_of_tainted_sinks env taints sinks in
++  let effects = effects_of_tainted_sinks env ~shape taints sinks in
+   record_effects env effects;
+   (taints, shape, var_env')
+ 

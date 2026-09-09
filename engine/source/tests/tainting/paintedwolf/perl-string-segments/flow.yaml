@@ -1,0 +1,6 @@
+rules:
+- id: prefix
+  languages: [perl]
+  severity: ERROR
+  message: Preserve literal segments around interpolation
+  pattern: inspect("prefix $X suffix")

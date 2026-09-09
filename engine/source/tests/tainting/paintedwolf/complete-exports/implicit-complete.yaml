@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "exports",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Resolved exported API",
+      "patterns": [
+        {
+          "pattern": "($FN $VALUE)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$FN",
+            "module": "(api)",
+            "symbol": [
+              "run"
+            ],
+            "imports": {
+              "implicit": [
+                "(api)"
+              ],
+              "complete-exports": [
+                {
+                  "module": "(api)",
+                  "symbols": [
+                    "run"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

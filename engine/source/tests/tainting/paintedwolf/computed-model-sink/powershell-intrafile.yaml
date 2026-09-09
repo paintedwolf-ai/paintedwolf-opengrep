@@ -1,0 +1,55 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "powershell"
+      ],
+      "severity": "ERROR",
+      "message": "A modeled instance reaches its typed sink",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "New-Model ...",
+          "exact": true,
+          "model-type": "example.model"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "pattern": "& $SINK $VALUE"
+                },
+                {
+                  "pattern": "& $SINK -Value $VALUE"
+                },
+                {
+                  "pattern": "$VALUE | & $SINK"
+                }
+              ]
+            },
+            {
+              "metavariable-regex": {
+                "metavariable": "$SINK",
+                "regex": "(?i)^Use-Model$"
+              }
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "example.model"
+          }
+        }
+      ]
+    }
+  ]
+}

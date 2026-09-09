@@ -1,0 +1,38 @@
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -280,10 +280,7 @@
+ let any_is_best_source ?(is_lval = false) env any =
+   env.taint_inst.preds.is_source any
+   |> List.filter (fun (m : R.taint_source TM.t) ->
+-         Taint_model_types.constraint_holds env.taint_inst.lang env.lval_env m.spec_pm.env
+-           m.spec.source_requires_model_type
+-         &&
+-         match m.spec.source_by_side_effect with
++         (match m.spec.source_by_side_effect with
+          | Only -> is_lval && TM.is_exact m
+          (* 'Yes' should probably require an exact match like 'Only' but for
+           *  backwards compatibility we keep it this way. *)
+@@ -291,6 +288,8 @@
+          | No ->
+              (not m.spec.source_exact)
+              || TM.is_best_match env.func.best_matches m)
++         && Taint_model_types.constraint_holds env.taint_inst.lang env.lval_env m.spec_pm.env
++              m.spec.source_requires_model_type)
+ 
+ let any_is_best_sink env any =
+   env.taint_inst.preds.is_sink any
+--- a/src/tainting/Taint_spec_match.ml
++++ b/src/tainting/Taint_spec_match.ml
+@@ -81,7 +81,12 @@
+      * to be simple and quite efficient. *)
+     let compare (Any m1) (Any m2) =
+       let sink_id_cmp = String.compare m1.spec_id m2.spec_id in
++      (* Nested syntax matches have separate IL submatch selections. *)
++      let occurrence_cmp =
++        Stdlib.compare (PM.range m1.spec_pm) (PM.range m2.spec_pm)
++      in
+       if sink_id_cmp <> 0 then sink_id_cmp
++      else if occurrence_cmp <> 0 then occurrence_cmp
+       else
+         (* If m1 is contained in m2 or vice-versa, then they are the *same* sink match.
+          * We only want to keep one match per sink, the best match! *)

@@ -1,0 +1,45 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true,
+          "model-type": "test.String"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "pattern": "$TEXT.length",
+          "exact": true,
+          "requires-model-type": {
+            "metavariable": "$TEXT",
+            "type": "test.String"
+          }
+        }
+      ],
+      "options": {
+        "taint_intrafile": false
+      }
+    }
+  ]
+}

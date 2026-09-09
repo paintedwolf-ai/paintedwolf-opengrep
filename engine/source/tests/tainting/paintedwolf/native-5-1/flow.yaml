@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "powershell"
+      ],
+      "severity": "ERROR",
+      "message": "Flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "Invoke-WebRequest ...",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "$X | Invoke-Expression"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

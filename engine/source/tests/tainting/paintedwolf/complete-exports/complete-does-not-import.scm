@@ -1,0 +1,2 @@
+;; ok: exports
+(run "x")

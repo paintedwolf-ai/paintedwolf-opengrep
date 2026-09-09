@@ -1,0 +1,18 @@
+rules:
+- id: browser-input
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Browser input reaches evaluation
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern: $LOCATION.search
+    - metavariable-regex:
+        metavariable: $LOCATION
+        regex: ^location$
+    - metavariable-name:
+        metavariable: $LOCATION
+        kind: unbound
+    exact: true
+  pattern-sinks:
+  - pattern: sink($VALUE)

@@ -1,0 +1,49 @@
+diff --git a/src/analyzing/AST_to_IL.ml b/src/analyzing/AST_to_IL.ml
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -249,16 +249,25 @@
+       let lval = lval_of_base (Var var) in
+       ([mk_s (Instr (mk_i (Assign (lval, exp)) NoOrig))], var, lval)
+ 
++let fresh_value_lval tok eorig =
++  let lval = fresh_lval tok in
++  let source, value_origin =
++    match eorig with
++    | SameAs expression | Related (G.E expression) ->
++        (Some expression, ValueOf expression)
++    | _ -> (None, NoOrig)
++  in
++  let lval = match lval.base with
++    | Var name -> { lval with base = Var { name with value_origin = source } }
++    | _ -> lval
++  in
++  (lval, value_origin)
++
+ let call_instr tok eorig ~void mk_call : stmts * exp =
+   if void then
+     ([mk_s (Instr (mk_i (mk_call None) eorig))], mk_unit tok NoOrig)
+   else
+-    let lval = fresh_lval tok in
+-    let source = match eorig with SameAs expression | Related (G.E expression) -> Some expression | _ -> None in
+-    let lval = match lval.base with Var name -> { lval with base = Var { name with value_origin = source } } | _ -> lval in
+-    let value_origin = match eorig with
+-      | SameAs expression | Related (G.E expression) -> ValueOf expression
+-      | _ -> NoOrig in
++    let lval, value_origin = fresh_value_lval tok eorig in
+     ([mk_s (Instr (mk_i (mk_call (Some lval)) eorig))], mk_e (Fetch lval) value_origin)
+ 
+ let ident_of_entity_opt ent : (G.ident * G.id_info) option =
+@@ -1543,11 +1552,11 @@
+        * object is being assigned to. See HACK(new), we expect to intercept `New`
+        * already in 'stmt_aux'.
+        *)
+-      let lval = fresh_lval tok in
++      let lval, value_origin = fresh_value_lval tok eorig in
+       let ss_args, args = arguments env (Tok.unbracket args) in
+       let ss_ty, t = type_ env ty in
+       let instr = mk_s (Instr (mk_i (New (lval, t, None, args)) eorig)) in
+-      (ss_args @ ss_ty @ [instr], mk_e (Fetch lval) NoOrig)
++      (ss_args @ ss_ty @ [instr], mk_e (Fetch lval) value_origin)
+   | G.Call ({ e = G.IdSpecial spec; _ }, args) -> (
+       let tok = snd spec in
+       let ss_args, args = arguments env (Tok.unbracket args) in

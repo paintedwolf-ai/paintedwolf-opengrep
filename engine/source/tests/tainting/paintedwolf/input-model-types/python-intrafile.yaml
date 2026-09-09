@@ -1,0 +1,46 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "python"
+      ],
+      "message": "A modeled parameter reaches its typed sink",
+      "severity": "ERROR",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "def handler($REQ):\n  ..."
+            },
+            {
+              "focus-metavariable": "$REQ"
+            }
+          ],
+          "exact": true,
+          "model-type": "example.Request"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$VALUE",
+            "type": "example.Request"
+          }
+        }
+      ]
+    }
+  ]
+}

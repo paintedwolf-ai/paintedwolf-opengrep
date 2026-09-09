@@ -1,0 +1,1503 @@
+diff --git a/Language.ml b/Language.ml
+index 21eb857..65f8d8b 100644
+--- a/Language.ml
++++ b/Language.ml
+@@ -2,6 +2,9 @@
+ 
+ (* All the programming languages for which Semgrep has dedicated support. *)
+ type t =
++| Groovy
++| Powershell
++| Perl
+ | Apex
+ | Bash
+ | C
+@@ -73,6 +76,7 @@ type info = {
+   exts: string list;
+   maturity: maturity;
+   example_ext: string option;
++  filenames: string list;
+   excluded_exts: string list;
+   reverse_exts: string list option;
+   shebangs: string list;
+@@ -80,6 +84,48 @@ type info = {
+ }
+ 
+ let list = [
++{
++  id = Groovy;
++  id_string = "groovy";
++  name = "Groovy";
++  keys = [{|groovy|}];
++  exts = [{|.groovy|}; {|.gvy|}; {|.gradle|}];
++  maturity = Develop;
++  example_ext = None;
++  filenames = [{|Jenkinsfile|}];
++  excluded_exts = [];
++  reverse_exts = None;
++  shebangs = [];
++  tags = [];
++};
++{
++  id = Powershell;
++  id_string = "powershell";
++  name = "PowerShell";
++  keys = [{|powershell|}; {|ps1|}];
++  exts = [{|.ps1|}; {|.psm1|}; {|.psd1|}];
++  maturity = Develop;
++  example_ext = None;
++  filenames = [];
++  excluded_exts = [];
++  reverse_exts = None;
++  shebangs = [];
++  tags = [];
++};
++{
++  id = Perl;
++  id_string = "perl";
++  name = "Perl";
++  keys = [{|perl|}];
++  exts = [{|.pl|}; {|.PL|}; {|.pm|}; {|.psgi|}; {|.t|}; {|.plx|}; {|.perl|}; {|.ph|}; {|.al|}; {|.cgi|}; {|.fcgi|}];
++  maturity = Develop;
++  example_ext = None;
++  filenames = [{|cpanfile|}; {|Rexfile|}; {|ack|}; {|latexmkrc|}; {|.latexmkrc|}];
++  excluded_exts = [];
++  reverse_exts = None;
++  shebangs = [{|perl|}];
++  tags = [];
++};
+ {
+   id = Apex;
+   id_string = "apex";
+@@ -88,6 +134,7 @@ let list = [
+   exts = [{|.cls|}; {|.trigger|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -101,6 +148,7 @@ let list = [
+   exts = [{|.bash|}; {|.sh|}];
+   maturity = Alpha;
+   example_ext = Some {|.sh|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|bash|}; {|sh|}];
+@@ -114,6 +162,7 @@ let list = [
+   exts = [{|.c|}; {|.h|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -127,6 +176,7 @@ let list = [
+   exts = [{|.cairo|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -140,6 +190,7 @@ let list = [
+   exts = [{|.circom|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -153,6 +204,7 @@ let list = [
+   exts = [{|.clj|}; {|.cljs|}; {|.cljc|}; {|.edn|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -166,6 +218,7 @@ let list = [
+   exts = [{|.cc|}; {|.cpp|}; {|.cxx|}; {|.c++|}; {|.pcc|}; {|.tpp|}; {|.C|}; {|.h|}; {|.hh|}; {|.hpp|}; {|.hxx|}; {|.inl|}; {|.ipp|}];
+   maturity = Alpha;
+   example_ext = Some {|.cpp|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -179,6 +232,7 @@ let list = [
+   exts = [{|.cr|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|crystal|}];
+@@ -192,6 +246,7 @@ let list = [
+   exts = [{|.cs|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -205,6 +260,7 @@ let list = [
+   exts = [{|.dart|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -224,6 +280,7 @@ let list = [
+   exts = [{|.dockerfile|}; {|.Dockerfile|}; {|Dockerfile|}; {|dockerfile|}];
+   maturity = Alpha;
+   example_ext = Some {|.dockerfile|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -237,6 +294,7 @@ let list = [
+   exts = [{|.ex|}; {|.exs|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -250,6 +308,7 @@ let list = [
+   exts = [{|.go|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -263,6 +322,7 @@ let list = [
+   exts = [{|.hack|}; {|.hck|}; {|.hh|}];
+   maturity = Develop;
+   example_ext = Some {|.hack|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|hhvm|}];
+@@ -276,6 +336,7 @@ let list = [
+   exts = [{|.htm|}; {|.html|}];
+   maturity = Alpha;
+   example_ext = Some {|.html|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -289,6 +350,7 @@ let list = [
+   exts = [{|.java|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -302,6 +364,7 @@ let list = [
+   exts = [{|.cjs|}; {|.js|}; {|.jsx|}; {|.mjs|}];
+   maturity = Ga;
+   example_ext = Some {|.jsx|};
++  filenames = [];
+   excluded_exts = [{|.min.js|}];
+   reverse_exts = None;
+   shebangs = [{|node|}; {|js|}; {|nodejs|}];
+@@ -315,6 +378,7 @@ let list = [
+   exts = [{|.json|}; {|.ipynb|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -328,6 +392,7 @@ let list = [
+   exts = [{|.jsonnet|}; {|.libsonnet|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -341,6 +406,7 @@ let list = [
+   exts = [{|.jl|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -354,6 +420,7 @@ let list = [
+   exts = [{|.kt|}; {|.kts|}; {|.ktm|}];
+   maturity = Beta;
+   example_ext = Some {|.kt|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -367,6 +434,7 @@ let list = [
+   exts = [{|.lisp|}; {|.cl|}; {|.el|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -380,6 +448,7 @@ let list = [
+   exts = [{|.lua|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|lua|}];
+@@ -396,6 +465,7 @@ let list = [
+   exts = [{|.move|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -412,6 +482,7 @@ let list = [
+   exts = [{|.move|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -425,6 +496,7 @@ let list = [
+   exts = [{|.ml|}; {|.mli|}];
+   maturity = Alpha;
+   example_ext = Some {|.ml|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|ocaml|}; {|ocamlscript|}];
+@@ -438,6 +510,7 @@ let list = [
+   exts = [{|.php|}; {|.tpl|}; {|.phtml|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|php|}];
+@@ -451,6 +524,7 @@ let list = [
+   exts = [{|.promql|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -464,6 +538,7 @@ let list = [
+   exts = [{|.proto|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -477,6 +552,7 @@ let list = [
+   exts = [{|.py|}; {|.pyi|}];
+   maturity = Develop;
+   example_ext = Some {|.py|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = Some [];
+   shebangs = [{|python|}; {|python2|}];
+@@ -490,6 +566,7 @@ let list = [
+   exts = [{|.py|}; {|.pyi|}];
+   maturity = Develop;
+   example_ext = Some {|.py|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = Some [];
+   shebangs = [{|python|}; {|python3|}];
+@@ -503,6 +580,7 @@ let list = [
+   exts = [{|.py|}; {|.pyi|}];
+   maturity = Ga;
+   example_ext = Some {|.py|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|python|}; {|python2|}; {|python3|}];
+@@ -516,6 +594,7 @@ let list = [
+   exts = [{|.ql|}; {|.qll|}];
+   maturity = Alpha;
+   example_ext = Some {|.ql|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -529,6 +608,7 @@ let list = [
+   exts = [{|.r|}; {|.R|}];
+   maturity = Alpha;
+   example_ext = Some {|.R|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -542,6 +622,7 @@ let list = [
+   exts = [{|.rb|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|ruby|}];
+@@ -555,6 +636,7 @@ let list = [
+   exts = [{|.rs|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|run-cargo-script|}];
+@@ -568,6 +650,7 @@ let list = [
+   exts = [{|.scala|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [{|scala|}];
+@@ -581,6 +664,7 @@ let list = [
+   exts = [{|.scm|}; {|.ss|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -594,6 +678,7 @@ let list = [
+   exts = [{|.sol|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -607,6 +692,7 @@ let list = [
+   exts = [{|.swift|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -620,6 +706,7 @@ let list = [
+   exts = [{|.tf|}; {|.hcl|}; {|.tfvars|}];
+   maturity = Ga;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -633,6 +720,7 @@ let list = [
+   exts = [{|.ts|}; {|.tsx|}];
+   maturity = Ga;
+   example_ext = Some {|.tsx|};
++  filenames = [];
+   excluded_exts = [{|.d.ts|}];
+   reverse_exts = None;
+   shebangs = [{|ts-node|}];
+@@ -646,6 +734,7 @@ let list = [
+   exts = [{|.vb|}];
+   maturity = Alpha;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -659,6 +748,7 @@ let list = [
+   exts = [{|.vue|}];
+   maturity = Develop;
+   example_ext = None;
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -672,6 +762,7 @@ let list = [
+   exts = [{|.xml|}; {|.plist|}];
+   maturity = Alpha;
+   example_ext = Some {|.xml|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+@@ -685,6 +776,7 @@ let list = [
+   exts = [{|.yml|}; {|.yaml|}];
+   maturity = Alpha;
+   example_ext = Some {|.yaml|};
++  filenames = [];
+   excluded_exts = [];
+   reverse_exts = None;
+   shebangs = [];
+diff --git a/Language.mli b/Language.mli
+index 424f6ca..f8ed405 100644
+--- a/Language.mli
++++ b/Language.mli
+@@ -2,6 +2,9 @@
+ 
+ (* All the programming languages for which Semgrep has dedicated support. *)
+ type t =
++| Groovy
++| Powershell
++| Perl
+ | Apex
+ | Bash
+ | C
+@@ -73,6 +76,7 @@ type info = {
+   exts: string list;
+   maturity: maturity;
+   example_ext: string option;
++  filenames: string list;
+   excluded_exts: string list;
+   reverse_exts: string list option;
+   shebangs: string list;
+diff --git a/generate.py b/generate.py
+index c7f1ace..af88099 100755
+--- a/generate.py
++++ b/generate.py
+@@ -137,6 +137,7 @@ class Language():
+ 
+     # File extensions that semgrep skips even if one of exts is a suffix,
+     # such as ".min.js".
++    filenames: List[str] = field(default_factory=list)
+     excluded_exts: List[str] = field(default_factory=list)
+ 
+     # If present, overrides exts when determining what language a
+@@ -182,6 +183,7 @@ class Language():
+             "maturity": self.maturity.to_json(),
+             "exts": self.exts,
+             "example_ext": self.example_ext,
++            "filenames": self.filenames,
+             "excluded_exts": self.excluded_exts,
+             "reverse_exts": self.reverse_exts,
+             "shebangs": self.shebangs,
+@@ -194,6 +196,10 @@ class Language():
+ 
+ 
+ LANGUAGES : List[Language] = [
++    Language(id_="groovy", name="Groovy", keys=['groovy'], exts=['.groovy', '.gvy', '.gradle'], filenames=['Jenkinsfile'], maturity=Maturity.DEVELOP),
++    Language(id_="powershell", name="PowerShell", keys=['powershell', 'ps1'], exts=['.ps1', '.psm1', '.psd1'], maturity=Maturity.DEVELOP),
++    Language(id_="perl", name="Perl", keys=['perl'], exts=['.pl', '.PL', '.pm', '.psgi', '.t', '.plx', '.perl', '.ph', '.al', '.cgi', '.fcgi'], filenames=['cpanfile', 'Rexfile', 'ack', 'latexmkrc', '.latexmkrc'], shebangs=['perl'], maturity=Maturity.DEVELOP),
++
+     Language(
+         comment="",
+         id_="apex",
+@@ -729,6 +735,7 @@ type info = {
+   exts: string list;
+   maturity: maturity;
+   example_ext: string option;
++  filenames: string list;
+   excluded_exts: string list;
+   reverse_exts: string list option;
+   shebangs: string list;
+@@ -801,6 +808,7 @@ let list = [
+   exts = {ocaml_string_list(x.exts)};
+   maturity = {x.maturity.value.capitalize()};
+   example_ext = {ocaml_string_option(x.example_ext)};
++  filenames = {ocaml_string_list(x.filenames)};
+   excluded_exts = {ocaml_string_list(x.excluded_exts)};
+   reverse_exts = {ocaml_string_list_option(x.reverse_exts)};
+   shebangs = {ocaml_string_list(x.shebangs)};
+diff --git a/lang.json b/lang.json
+index e94e9e7..eb7bf3e 100644
+--- a/lang.json
++++ b/lang.json
+@@ -1,4 +1,83 @@
+ [
++  {
++    "id": "groovy",
++    "name": "Groovy",
++    "keys": [
++      "groovy"
++    ],
++    "maturity": "develop",
++    "exts": [
++      ".groovy",
++      ".gvy",
++      ".gradle"
++    ],
++    "example_ext": null,
++    "filenames": [
++      "Jenkinsfile"
++    ],
++    "excluded_exts": [],
++    "reverse_exts": null,
++    "shebangs": [],
++    "is_target_language": true,
++    "tags": []
++  },
++  {
++    "id": "powershell",
++    "name": "PowerShell",
++    "keys": [
++      "powershell",
++      "ps1"
++    ],
++    "maturity": "develop",
++    "exts": [
++      ".ps1",
++      ".psm1",
++      ".psd1"
++    ],
++    "example_ext": null,
++    "filenames": [],
++    "excluded_exts": [],
++    "reverse_exts": null,
++    "shebangs": [],
++    "is_target_language": true,
++    "tags": []
++  },
++  {
++    "id": "perl",
++    "name": "Perl",
++    "keys": [
++      "perl"
++    ],
++    "maturity": "develop",
++    "exts": [
++      ".pl",
++      ".PL",
++      ".pm",
++      ".psgi",
++      ".t",
++      ".plx",
++      ".perl",
++      ".ph",
++      ".al",
++      ".cgi",
++      ".fcgi"
++    ],
++    "example_ext": null,
++    "filenames": [
++      "cpanfile",
++      "Rexfile",
++      "ack",
++      "latexmkrc",
++      ".latexmkrc"
++    ],
++    "excluded_exts": [],
++    "reverse_exts": null,
++    "shebangs": [
++      "perl"
++    ],
++    "is_target_language": true,
++    "tags": []
++  },
+   {
+     "id": "apex",
+     "name": "Apex",
+@@ -11,6 +90,7 @@
+       ".trigger"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -30,6 +110,7 @@
+       ".sh"
+     ],
+     "example_ext": ".sh",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -51,6 +132,7 @@
+       ".h"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -68,6 +150,7 @@
+       ".cairo"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -85,6 +168,7 @@
+       ".circom"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -105,6 +189,7 @@
+       ".edn"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -135,6 +220,7 @@
+       ".ipp"
+     ],
+     "example_ext": ".cpp",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -152,6 +238,7 @@
+       ".cr"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -172,6 +259,7 @@
+       ".cs"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -189,6 +277,7 @@
+       ".dart"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -211,6 +300,7 @@
+       "dockerfile"
+     ],
+     "example_ext": ".dockerfile",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -230,6 +320,7 @@
+       ".exs"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -250,6 +341,7 @@
+       ".go"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -269,6 +361,7 @@
+       ".hh"
+     ],
+     "example_ext": ".hack",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -289,6 +382,7 @@
+       ".html"
+     ],
+     "example_ext": ".html",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -306,6 +400,7 @@
+       ".java"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -327,6 +422,7 @@
+       ".mjs"
+     ],
+     "example_ext": ".jsx",
++    "filenames": [],
+     "excluded_exts": [
+       ".min.js"
+     ],
+@@ -353,6 +449,7 @@
+       ".ipynb"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -371,6 +468,7 @@
+       ".libsonnet"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -388,6 +486,7 @@
+       ".jl"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -408,6 +507,7 @@
+       ".ktm"
+     ],
+     "example_ext": ".kt",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -427,6 +527,7 @@
+       ".el"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -444,6 +545,7 @@
+       ".lua"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -464,6 +566,7 @@
+       ".move"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -482,6 +585,7 @@
+       ".move"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -500,6 +604,7 @@
+       ".mli"
+     ],
+     "example_ext": ".ml",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -522,6 +627,7 @@
+       ".phtml"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -541,6 +647,7 @@
+       ".promql"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -560,6 +667,7 @@
+       ".proto"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -578,6 +686,7 @@
+       ".pyi"
+     ],
+     "example_ext": ".py",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": [],
+     "shebangs": [
+@@ -601,6 +710,7 @@
+       ".pyi"
+     ],
+     "example_ext": ".py",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": [],
+     "shebangs": [
+@@ -625,6 +735,7 @@
+       ".pyi"
+     ],
+     "example_ext": ".py",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -649,6 +760,7 @@
+       ".qll"
+     ],
+     "example_ext": ".ql",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -667,6 +779,7 @@
+       ".R"
+     ],
+     "example_ext": ".R",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -684,6 +797,7 @@
+       ".rb"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -703,6 +817,7 @@
+       ".rs"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -722,6 +837,7 @@
+       ".scala"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [
+@@ -742,6 +858,7 @@
+       ".ss"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -760,6 +877,7 @@
+       ".sol"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -777,6 +895,7 @@
+       ".swift"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -798,6 +917,7 @@
+       ".tfvars"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -817,6 +937,7 @@
+       ".tsx"
+     ],
+     "example_ext": ".tsx",
++    "filenames": [],
+     "excluded_exts": [
+       ".d.ts"
+     ],
+@@ -840,6 +961,7 @@
+       ".vb"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -857,6 +979,7 @@
+       ".vue"
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -875,6 +998,7 @@
+       ".plist"
+     ],
+     "example_ext": ".xml",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -893,6 +1017,7 @@
+       ".yaml"
+     ],
+     "example_ext": ".yaml",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -912,6 +1037,7 @@
+       ""
+     ],
+     "example_ext": ".generic",
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": null,
+     "shebangs": [],
+@@ -930,6 +1056,7 @@
+       ""
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": [],
+     "shebangs": [],
+@@ -949,6 +1076,7 @@
+       ""
+     ],
+     "example_ext": null,
++    "filenames": [],
+     "excluded_exts": [],
+     "reverse_exts": [],
+     "shebangs": [],
+diff --git a/rule_schema_v1.yaml b/rule_schema_v1.yaml
+index d2bc4c8..ea7680e 100644
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -323,6 +323,7 @@ $defs:
+         - $ref: "#/$defs/metavariable-regex"
+         - $ref: "#/$defs/metavariable-pattern"
+         - $ref: "#/$defs/metavariable-type"
++        - $ref: "#/$defs/metavariable-name"
+         - $ref: "#/$defs/semgrep-internal-metavariable-name"
+         - $ref: "#/$defs/metavariable-comparison"
+         - $ref: "#/$defs/pattern-where-python"
+@@ -343,6 +344,67 @@ $defs:
+       anyOf:
+         - type: object
+           properties:
++            model-singleton:
++              type: boolean
++            model-type:
++              type: string
++              minLength: 1
++              maxLength: 128
++            preserves-model-type:
++              type: boolean
++            from-model-member:
++              type: string
++              minLength: 1
++              maxLength: 128
++            from-model-type:
++              type: string
++              minLength: 1
++              maxLength: 128
++            requires-model-type:
++              type: object
++              required: [metavariable, type]
++              additionalProperties: false
++              properties:
++                member:
++                  type: string
++                  minLength: 1
++                  maxLength: 128
++                metavariable:
++                  type: string
++                type:
++                  type: string
++                  minLength: 1
++                  maxLength: 128
++            to-parameter:
++              type: object
++              required: [index]
++              additionalProperties: false
++              properties:
++                preserves-array:
++                  type: boolean
++                array-elements:
++                  type: boolean
++                array-head-callable:
++                  type: boolean
++                index:
++                  type: integer
++                  minimum: 0
++                  maximum: 31
++                arities:
++                  type: array
++                  minItems: 1
++                  maxItems: 33
++                  items:
++                    type: integer
++                    minimum: 0
++                    maximum: 32
++                path:
++                  type: array
++                  maxItems: 16
++                  items:
++                    type: string
++                    minLength: 1
++                    maxLength: 128
+             pattern:
+               title: Return finding where Semgrep pattern matches exactly
+               type: string
+@@ -647,6 +709,38 @@ $defs:
+     required:
+       - metavariable-type
+     additionalProperties: false
++  metavariable-name:
++    type: object
++    properties:
++      metavariable-name:
++        type: object
++        properties:
++          metavariable:
++            type: string
++          symbol:
++            type: array
++            maxItems: 16
++            items:
++              type: string
++              minLength: 1
++          kind:
++            enum: [unbound]
++          module:
++            type: string
++          modules:
++            type: array
++            minItems: 1
++            items:
++              type: string
++        required:
++          - metavariable
++        oneOf:
++          - required: [module]
++          - required: [modules]
++          - required: [kind]
++        additionalProperties: false
++    required: [metavariable-name]
++    additionalProperties: false
+   semgrep-internal-metavariable-name:
+     type: object
+     properties:
+diff --git a/semgrep_output_v1.atd b/semgrep_output_v1.atd
+index 8fc083d..7ec447d 100644
+--- a/semgrep_output_v1.atd
++++ b/semgrep_output_v1.atd
+@@ -691,6 +691,7 @@ type error_type
+   | PatternParseError of string list
+   (* since semgrep 0.97 *)
+   | PartialParsing of location list (* list of skipped tokens *)
++  | PartialSemantics of string (* unsupported semantic construct code; location is on the error *)
+   (* since semgrep 1.38.0 *)
+   | IncompatibleRule of incompatible_rule
+   (* Those Xxx0 variants were introduced in semgrep 1.45.0, but actually they
+@@ -1873,6 +1874,7 @@ type core_error <python decorator="dataclass(frozen=True)"> = {
+   message: string;
+   ?details: string option;
+   ?location: location option;
++  ?path: fpath option;
+   ?rule_id: rule_id option;
+ }
+ 
+diff --git a/semgrep_output_v1.jsonschema b/semgrep_output_v1.jsonschema
+index 3217584..01e6689 100644
+--- a/semgrep_output_v1.jsonschema
++++ b/semgrep_output_v1.jsonschema
+@@ -488,6 +488,14 @@
+             }
+           ]
+         },
++        {
++          "type": "array",
++          "minItems": 2,
++          "items": false,
++          "prefixItems": [
++            { "const": "PartialSemantics" }, { "type": "string" }
++          ]
++        },
+         {
+           "type": "array",
+           "minItems": 2,
+@@ -1549,6 +1557,7 @@
+         "message": { "type": "string" },
+         "details": { "type": "string" },
+         "location": { "$ref": "#/definitions/location" },
++        "path": { "$ref": "#/definitions/fpath" },
+         "rule_id": { "$ref": "#/definitions/rule_id" }
+       }
+     },
+diff --git a/semgrep_output_v1.proto b/semgrep_output_v1.proto
+index bfe1249..5e84459 100644
+--- a/semgrep_output_v1.proto
++++ b/semgrep_output_v1.proto
+@@ -1,6 +1,6 @@
+ // Generated by jsonschema2protobuf.  DO NOT EDIT!
+ // Source file: semgrep_output_v1.jsonschema
+-// Source file sha256 digest: 894b24f81558963f3209c70fee03606944e15fdf5f2aedcfd14fc5c7d74f92d4
++// Source file sha256 digest: 290b5e438a048d868174d8a4e84510825708c3a7a8d03315d3b2efce079db9a1
+ 
+ syntax = "proto3";
+ 
+@@ -625,6 +625,7 @@ message CoreError {
+   string message = 337998899;
+   string details = 28147206;
+   Location location = 206711021;
++  string path = 3212859;
+   string rule_id = 42354089;
+ }
+ 
+diff --git a/semgrep_output_v1.py b/semgrep_output_v1.py
+index 29d34cf..4fd59dc 100644
+--- a/semgrep_output_v1.py
++++ b/semgrep_output_v1.py
+@@ -6464,6 +6464,24 @@ class PartialParsing:
+         return json.dumps(self.to_json(), **kw)
+ 
+ 
++@dataclass(frozen=True, order=True)
++class PartialSemantics:
++    """Original type: error_type = [ ... | PartialSemantics of ... | ... ]"""
++
++    value: str
++
++    @property
++    def kind(self) -> str:
++        """Name of the class representing this variant."""
++        return 'PartialSemantics'
++
++    def to_json(self) -> Any:
++        return ['PartialSemantics', _atd_write_string(self.value)]
++
++    def to_json_string(self, **kw: Any) -> str:
++        return json.dumps(self.to_json(), **kw)
++
++
+ @dataclass(frozen=True, order=True)
+ class IncompatibleRule_:
+     """Original type: error_type = [ ... | IncompatibleRule of ... | ... ]"""
+@@ -6538,7 +6556,7 @@ class DependencyResolutionError:
+ class ErrorType:
+     """Original type: error_type = [ ... ]"""
+ 
+-    value: Union[LexicalError, ParseError, OtherParseError, AstBuilderError, RuleParseError, SemgrepWarning, SemgrepError, InvalidRuleSchemaError, UnknownLanguageError, InvalidYaml, MatchingError, SemgrepMatchFound, TooManyMatches_, FatalError, Timeout, OutOfMemory, StackOverflow, TimeoutDuringInterfile, OutOfMemoryDuringInterfile, MissingPlugin, PatternParseError, PartialParsing, IncompatibleRule_, PatternParseError0, IncompatibleRule0, DependencyResolutionError]
++    value: Union[LexicalError, ParseError, OtherParseError, AstBuilderError, RuleParseError, SemgrepWarning, SemgrepError, InvalidRuleSchemaError, UnknownLanguageError, InvalidYaml, MatchingError, SemgrepMatchFound, TooManyMatches_, FatalError, Timeout, OutOfMemory, StackOverflow, TimeoutDuringInterfile, OutOfMemoryDuringInterfile, MissingPlugin, PatternParseError, PartialParsing, PartialSemantics, IncompatibleRule_, PatternParseError0, IncompatibleRule0, DependencyResolutionError]
+ 
+     @property
+     def kind(self) -> str:
+@@ -6599,6 +6617,8 @@ class ErrorType:
+                 return cls(PatternParseError(_atd_read_list(_atd_read_string)(x[1])))
+             if cons == 'PartialParsing':
+                 return cls(PartialParsing(_atd_read_list(Location.from_json)(x[1])))
++            if cons == 'PartialSemantics':
++                return cls(PartialSemantics(_atd_read_string(x[1])))
+             if cons == 'IncompatibleRule':
+                 return cls(IncompatibleRule_(IncompatibleRule.from_json(x[1])))
+             if cons == 'DependencyResolutionError':
+@@ -8936,6 +8956,7 @@ class CoreError:
+     message: str
+     details: Optional[str] = None
+     location: Optional[Location] = None
++    path: Optional[Fpath] = None
+     rule_id: Optional[RuleId] = None
+ 
+     @classmethod
+@@ -8947,6 +8968,7 @@ class CoreError:
+                 message=_atd_read_string(x['message']) if 'message' in x else _atd_missing_json_field('CoreError', 'message'),
+                 details=_atd_read_string(x['details']) if 'details' in x else None,
+                 location=Location.from_json(x['location']) if 'location' in x else None,
++                path=Fpath.from_json(x['path']) if 'path' in x else None,
+                 rule_id=RuleId.from_json(x['rule_id']) if 'rule_id' in x else None,
+             )
+         else:
+@@ -8961,6 +8983,8 @@ class CoreError:
+             res['details'] = _atd_write_string(self.details)
+         if self.location is not None:
+             res['location'] = (lambda x: x.to_json())(self.location)
++        if self.path is not None:
++            res['path'] = (lambda x: x.to_json())(self.path)
+         if self.rule_id is not None:
+             res['rule_id'] = (lambda x: x.to_json())(self.rule_id)
+         return res
+diff --git a/semgrep_output_v1.ts b/semgrep_output_v1.ts
+index 57312bd..d9292e2 100644
+--- a/semgrep_output_v1.ts
++++ b/semgrep_output_v1.ts
+@@ -268,6 +268,7 @@ export type ErrorType =
+ | { kind: 'MissingPlugin' /* JSON: "Missing plugin" */ }
+ | { kind: 'PatternParseError'; value: string[] }
+ | { kind: 'PartialParsing'; value: Location[] }
++| { kind: 'PartialSemantics'; value: string }
+ | { kind: 'IncompatibleRule'; value: IncompatibleRule }
+ | { kind: 'PatternParseError0' /* JSON: "Pattern parse error" */ }
+ | { kind: 'IncompatibleRule0' /* JSON: "Incompatible rule" */ }
+@@ -842,6 +843,7 @@ export type CoreError = {
+   message: string;
+   details?: string;
+   location?: Location;
++  path?: Fpath;
+   rule_id?: RuleId;
+ }
+ 
+@@ -1862,6 +1864,8 @@ export function writeErrorType(x: ErrorType, context: any = x): any {
+       return ['PatternParseError', _atd_write_array(_atd_write_string)(x.value, x)]
+     case 'PartialParsing':
+       return ['PartialParsing', _atd_write_array(writeLocation)(x.value, x)]
++    case 'PartialSemantics':
++      return ['PartialSemantics', _atd_write_string(x.value, x)]
+     case 'IncompatibleRule':
+       return ['IncompatibleRule', writeIncompatibleRule(x.value, x)]
+     case 'PatternParseError0':
+@@ -1932,6 +1936,8 @@ export function readErrorType(x: any, context: any = x): ErrorType {
+         return { kind: 'PatternParseError', value: _atd_read_array(_atd_read_string)(x[1], x) }
+       case 'PartialParsing':
+         return { kind: 'PartialParsing', value: _atd_read_array(readLocation)(x[1], x) }
++      case 'PartialSemantics':
++        return { kind: 'PartialSemantics', value: _atd_read_string(x[1], x) }
+       case 'IncompatibleRule':
+         return { kind: 'IncompatibleRule', value: readIncompatibleRule(x[1], x) }
+       case 'DependencyResolutionError':
+@@ -3545,6 +3551,7 @@ export function writeCoreError(x: CoreError, context: any = x): any {
+     'message': _atd_write_required_field('CoreError', 'message', _atd_write_string, x.message, x),
+     'details': _atd_write_optional_field(_atd_write_string, x.details, x),
+     'location': _atd_write_optional_field(writeLocation, x.location, x),
++    'path': _atd_write_optional_field(writeFpath, x.path, x),
+     'rule_id': _atd_write_optional_field(writeRuleId, x.rule_id, x),
+   };
+ }
+@@ -3556,6 +3563,7 @@ export function readCoreError(x: any, context: any = x): CoreError {
+     message: _atd_read_required_field('CoreError', 'message', _atd_read_string, x['message'], x),
+     details: _atd_read_optional_field(_atd_read_string, x['details'], x),
+     location: _atd_read_optional_field(readLocation, x['location'], x),
++    path: _atd_read_optional_field(readFpath, x['path'], x),
+     rule_id: _atd_read_optional_field(readRuleId, x['rule_id'], x),
+   };
+ }
+diff --git a/semgrep_output_v1_j.ml b/semgrep_output_v1_j.ml
+index 6e89c5d..4def324 100644
+--- a/semgrep_output_v1_j.ml
++++ b/semgrep_output_v1_j.ml
+@@ -546,6 +546,7 @@ type error_type = Semgrep_output_v1_t.error_type =
+   | MissingPlugin
+   | PatternParseError of string list
+   | PartialParsing of location list
++  | PartialSemantics of string
+   | IncompatibleRule of incompatible_rule
+   | PatternParseError0
+   | IncompatibleRule0
+@@ -852,6 +853,7 @@ type core_error = Semgrep_output_v1_t.core_error = {
+   message: string;
+   details: string option;
+   location: location option;
++  path: fpath option;
+   rule_id: rule_id option
+ }
+ 
+@@ -20393,6 +20395,12 @@ let write_error_type : _ -> error_type -> _ = (
+           write__location_list
+         ) ob x;
+         Buffer.add_char ob ']'
++      | PartialSemantics x ->
++        Buffer.add_string ob "[\"PartialSemantics\",";
++        (
++          Yojson.Safe.write_string
++        ) ob x;
++        Buffer.add_char ob ']'
+       | IncompatibleRule x ->
+         Buffer.add_string ob "[\"IncompatibleRule\",";
+         (
+@@ -20516,6 +20524,15 @@ let read_error_type = (
+               Yojson.Safe.read_space p lb;
+               Yojson.Safe.read_gt p lb;
+               (PartialParsing x : error_type)
++            | "PartialSemantics" ->
++              Atdgen_runtime.Oj_run.read_until_field_value p lb;
++              let x = (
++                  Atdgen_runtime.Oj_run.read_string
++                ) p lb
++              in
++              Yojson.Safe.read_space p lb;
++              Yojson.Safe.read_gt p lb;
++              (PartialSemantics x : error_type)
+             | "IncompatibleRule" ->
+               Atdgen_runtime.Oj_run.read_until_field_value p lb;
+               let x = (
+@@ -20618,6 +20635,17 @@ let read_error_type = (
+               Yojson.Safe.read_space p lb;
+               Yojson.Safe.read_rbr p lb;
+               (PartialParsing x : error_type)
++            | "PartialSemantics" ->
++              Yojson.Safe.read_space p lb;
++              Yojson.Safe.read_comma p lb;
++              Yojson.Safe.read_space p lb;
++              let x = (
++                  Atdgen_runtime.Oj_run.read_string
++                ) p lb
++              in
++              Yojson.Safe.read_space p lb;
++              Yojson.Safe.read_rbr p lb;
++              (PartialSemantics x : error_type)
+             | "IncompatibleRule" ->
+               Yojson.Safe.read_space p lb;
+               Yojson.Safe.read_comma p lb;
+@@ -33399,6 +33427,17 @@ let write_core_error : _ -> core_error -> _ = (
+       )
+         ob x;
+     );
++    (match x.path with None -> () | Some x ->
++      if !is_first then
++        is_first := false
++      else
++        Buffer.add_char ob ',';
++        Buffer.add_string ob "\"path\":";
++      (
++        write_fpath
++      )
++        ob x;
++    );
+     (match x.rule_id with None -> () | Some x ->
+       if !is_first then
+         is_first := false
+@@ -33425,6 +33464,7 @@ let read_core_error = (
+     let field_message = ref (None) in
+     let field_details = ref (None) in
+     let field_location = ref (None) in
++    let field_path = ref (None) in
+     let field_rule_id = ref (None) in
+     try
+       Yojson.Safe.read_space p lb;
+@@ -33435,6 +33475,14 @@ let read_core_error = (
+           if pos < 0 || len < 0 || pos + len > String.length s then
+             invalid_arg (Printf.sprintf "out-of-bounds substring position or length: string = %S, requested position = %i, requested length = %i" s pos len);
+           match len with
++            | 4 -> (
++                if String.unsafe_get s pos = 'p' && String.unsafe_get s (pos+1) = 'a' && String.unsafe_get s (pos+2) = 't' && String.unsafe_get s (pos+3) = 'h' then (
++                  5
++                )
++                else (
++                  -1
++                )
++              )
+             | 7 -> (
+                 match String.unsafe_get s pos with
+                   | 'd' -> (
+@@ -33455,7 +33503,7 @@ let read_core_error = (
+                     )
+                   | 'r' -> (
+                       if String.unsafe_get s (pos+1) = 'u' && String.unsafe_get s (pos+2) = 'l' && String.unsafe_get s (pos+3) = 'e' && String.unsafe_get s (pos+4) = '_' && String.unsafe_get s (pos+5) = 'i' && String.unsafe_get s (pos+6) = 'd' then (
+-                        5
++                        6
+                       )
+                       else (
+                         -1
+@@ -33548,6 +33596,16 @@ let read_core_error = (
+               );
+             )
+           | 5 ->
++            if not (Yojson.Safe.read_null_if_possible p lb) then (
++              field_path := (
++                Some (
++                  (
++                    read_fpath
++                  ) p lb
++                )
++              );
++            )
++          | 6 ->
+             if not (Yojson.Safe.read_null_if_possible p lb) then (
+               field_rule_id := (
+                 Some (
+@@ -33570,6 +33628,14 @@ let read_core_error = (
+             if pos < 0 || len < 0 || pos + len > String.length s then
+               invalid_arg (Printf.sprintf "out-of-bounds substring position or length: string = %S, requested position = %i, requested length = %i" s pos len);
+             match len with
++              | 4 -> (
++                  if String.unsafe_get s pos = 'p' && String.unsafe_get s (pos+1) = 'a' && String.unsafe_get s (pos+2) = 't' && String.unsafe_get s (pos+3) = 'h' then (
++                    5
++                  )
++                  else (
++                    -1
++                  )
++                )
+               | 7 -> (
+                   match String.unsafe_get s pos with
+                     | 'd' -> (
+@@ -33590,7 +33656,7 @@ let read_core_error = (
+                       )
+                     | 'r' -> (
+                         if String.unsafe_get s (pos+1) = 'u' && String.unsafe_get s (pos+2) = 'l' && String.unsafe_get s (pos+3) = 'e' && String.unsafe_get s (pos+4) = '_' && String.unsafe_get s (pos+5) = 'i' && String.unsafe_get s (pos+6) = 'd' then (
+-                          5
++                          6
+                         )
+                         else (
+                           -1
+@@ -33683,6 +33749,16 @@ let read_core_error = (
+                 );
+               )
+             | 5 ->
++              if not (Yojson.Safe.read_null_if_possible p lb) then (
++                field_path := (
++                  Some (
++                    (
++                      read_fpath
++                    ) p lb
++                  )
++                );
++              )
++            | 6 ->
+               if not (Yojson.Safe.read_null_if_possible p lb) then (
+                 field_rule_id := (
+                   Some (
+@@ -33706,6 +33782,7 @@ let read_core_error = (
+             message = (match !field_message with Some x -> x | None -> Atdgen_runtime.Oj_run.missing_field p "message");
+             details = !field_details;
+             location = !field_location;
++            path = !field_path;
+             rule_id = !field_rule_id;
+           }
+          : core_error)
+diff --git a/semgrep_output_v1_j.mli b/semgrep_output_v1_j.mli
+index 28942ef..7681d1c 100644
+--- a/semgrep_output_v1_j.mli
++++ b/semgrep_output_v1_j.mli
+@@ -546,6 +546,7 @@ type error_type = Semgrep_output_v1_t.error_type =
+   | MissingPlugin
+   | PatternParseError of string list
+   | PartialParsing of location list
++  | PartialSemantics of string
+   | IncompatibleRule of incompatible_rule
+   | PatternParseError0
+   | IncompatibleRule0
+@@ -852,6 +853,7 @@ type core_error = Semgrep_output_v1_t.core_error = {
+   message: string;
+   details: string option;
+   location: location option;
++  path: fpath option;
+   rule_id: rule_id option
+ }
+ 

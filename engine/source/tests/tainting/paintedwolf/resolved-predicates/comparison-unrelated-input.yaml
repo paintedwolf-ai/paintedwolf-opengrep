@@ -1,0 +1,116 @@
+{
+  "rules": [
+    {
+      "id": "predicate",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Resolved string equality",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true,
+        "guarded_taint_signatures": true,
+        "taint_assume_safe_booleans": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "(source)"
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "(register $HANDLER)"
+            },
+            {
+              "focus-metavariable": "$HANDLER"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": [],
+            "arities": [
+              1
+            ]
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "(sink $VALUE)",
+          "preserves-arguments": [
+            0
+          ]
+        }
+      ],
+      "pattern-sanitizers": [
+        {
+          "patterns": [
+            {
+              "pattern": "($EQ $VALUE $LITERAL)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$EQ",
+                "module": "(guile)",
+                "symbol": [
+                  "string=?"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "predicate": {
+            "type": "string-equals",
+            "input": "$VALUE",
+            "literal": "$LITERAL"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "($EQ $LITERAL $VALUE)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$EQ",
+                "module": "(guile)",
+                "symbol": [
+                  "string=?"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "predicate": {
+            "type": "string-equals",
+            "input": "$VALUE",
+            "literal": "$LITERAL"
+          }
+        },
+        {
+          "patterns": [
+            {
+              "pattern": "($NOT $BOOL)"
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$NOT",
+                "module": "(guile)",
+                "symbol": [
+                  "not"
+                ]
+              }
+            }
+          ],
+          "exact": true,
+          "predicate": {
+            "type": "boolean-not",
+            "input": "$BOOL"
+          }
+        }
+      ]
+    }
+  ]
+}

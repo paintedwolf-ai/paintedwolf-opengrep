@@ -1,0 +1,56 @@
+{
+  "rules": [
+    {
+      "id": "exports",
+      "languages": [
+        "scheme"
+      ],
+      "severity": "ERROR",
+      "message": "Resolved exported API",
+      "patterns": [
+        {
+          "pattern": "($FN $VALUE)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$FN",
+            "module": "(api)",
+            "symbol": [
+              "run"
+            ],
+            "imports": {
+              "complete-exports": [
+                {
+                  "module": "(api)",
+                  "symbols": []
+                },
+                {
+                  "module": "(other)",
+                  "symbols": []
+                },
+                {
+                  "module": "(bridge)",
+                  "symbols": [
+                    "dispatch"
+                  ]
+                }
+              ],
+              "exports": [
+                {
+                  "module": "(bridge)",
+                  "symbol": "dispatch",
+                  "origin": {
+                    "module": "(api)",
+                    "symbol": [
+                      "run"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

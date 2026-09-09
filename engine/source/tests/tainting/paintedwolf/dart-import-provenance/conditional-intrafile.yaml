@@ -1,0 +1,54 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "dart"
+      ],
+      "severity": "ERROR",
+      "message": "An imported named constructor reaches a sink",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "pattern": "new $TYPE(...)"
+                },
+                {
+                  "pattern": "$TYPE(...)"
+                }
+              ]
+            },
+            {
+              "metavariable-name": {
+                "metavariable": "$TYPE",
+                "module": "dart:io",
+                "symbol": [
+                  "HttpClient"
+                ]
+              }
+            }
+          ],
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

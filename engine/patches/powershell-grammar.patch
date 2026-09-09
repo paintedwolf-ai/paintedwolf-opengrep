@@ -1,0 +1,60 @@
+diff --git a/grammar.js b/grammar.js
+index 9d530a1..419a237 100644
+--- a/grammar.js
++++ b/grammar.js
+@@ -32,6 +32,7 @@ export default grammar({
+     program: ($) => seq(optional($.param_block), $.statement_list),
+ 
+     // Comments
++    semgrep_ellipsis: $ => token(prec(10, "...")),
+     comment: ($) =>
+       token(
+         choice(
+@@ -119,6 +120,7 @@ export default grammar({
+     expandable_here_string_literal: ($) =>
+       seq(
+         /@\" *\r?\n/,
++        choice(token.immediate('"@'), seq(
+         repeat(
+           choice(
+             token.immediate(/[^\$\r\n`]+/),
+@@ -130,7 +132,7 @@ export default grammar({
+             token.immediate(/`.{1}|`\r?\n/),
+           ),
+         ),
+-        token.immediate(/(\r?\n)+\"@/),
++        token.immediate(/(\r?\n)+\"@/))),
+       ),
+ 
+     verbatim_string_characters: ($) =>
+@@ -140,8 +142,9 @@ export default grammar({
+       token(
+         seq(
+           /@\'\s*\r?\n/,
++          choice("'@", seq(
+           repeat(choice(/[^\r\n]/, /(\r?\n)+[^\'\r\n]/, /\r?\n\'[^@]/)),
+-          /(\r?\n)+\'@/,
++          /(\r?\n)+\'@/)),
+         ),
+       ),
+ 
+@@ -306,7 +309,10 @@ export default grammar({
+ 
+     // Commands
+     generic_token: ($) =>
+-      token(/[^\(\)\$\"\'\-\{\}@\|\[`\&\s][^\&\s\(\)\}\|;,]*/),
++      token(seq(
++        choice(/[^\(\)\$\"\'\-\{\}@\|\[`\&\s]/, seq('`', /[^\r\n]/)),
++        repeat(choice(/[^\&\s\(\)\}\|;,`]/, seq('`', /[^\r\n]/))),
++      )),
+ 
+     _command_token: ($) => token(/[^\(\)\{\}\s;\&]+/),
+ 
+@@ -999,6 +1005,7 @@ export default grammar({
+ 
+     _value: ($) =>
+       choice(
++        $.semgrep_ellipsis,
+         $.parenthesized_expression,
+         $.sub_expression,
+         $.array_expression,

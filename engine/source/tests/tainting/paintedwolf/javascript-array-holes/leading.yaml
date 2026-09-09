@@ -1,0 +1,16 @@
+rules:
+- id: flow
+  languages: [javascript, typescript]
+  message: Flow
+  severity: ERROR
+  mode: taint
+  options:
+    taint_intrafile: true
+    taint_unify_mvars: false
+    symbolic_propagation: true
+  pattern-sources:
+  - pattern: source()
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($X)
+    - focus-metavariable: $X

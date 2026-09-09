@@ -1,0 +1,129 @@
+--- a/src/engine/Match_search_mode.ml
++++ b/src/engine/Match_search_mode.ml
+@@ -751,7 +751,7 @@
+                match cond.R.kind, cond.R.modules with
+                | Some R.UnboundName, None -> Imported_bindings.unbound e
+                | None, Some modules ->
+-                   Imported_bindings.matches (Lazy.force env.imported_bindings) e ?symbol:cond.symbol modules
++                   Imported_bindings.matches (Lazy.force env.imported_bindings) e ?symbol:cond.symbol ?imports:cond.imports modules
+                | _ -> (match !hook_pro_metavariable_name with
+                | None ->
+                    error env
+--- a/src/matching/Generic_vs_generic.ml
++++ b/src/matching/Generic_vs_generic.ml
+@@ -920,6 +920,9 @@
+       *)
+       (if not is_root then m_expr a b1 else fail ())
+       >||> m_expr ~arguments_have_changed:false a b
++  | G.N (G.Id ((name, _), _)), B.N (B.Id _)
++    when arguments_have_changed && Mvar.is_metavar_name name ->
++      m_expr ~arguments_have_changed:false a b
+   (* equivalence: name resolving! *)
+   (* todo: it would be nice to factorize the aliasing code by just calling
+    * m_name, but below we use make_dotted, which is different from what
+--- a/src/metachecking/Translate_rule.ml
++++ b/src/metachecking/Translate_rule.ml
+@@ -55,6 +55,23 @@
+             | Default -> "default") );
+       ] )
+ 
++let translate_import_model model =
++  let names values = `A (List_.map (fun name -> `String name) values) in
++  let export fact =
++    let identity = [("module", `String fact.export_module); ("symbol", `String fact.export_name)] in
++    let target = match fact.export_origin with
++      | None -> [("absent", `Bool true)]
++      | Some (module_name, symbol) -> [("origin", `O [
++          ("module", `String module_name); ("symbol", names symbol)])]
++    in
++    `O (identity @ target)
++  in
++  let implicit = if List.is_empty model.implicit_modules then []
++    else [("implicit", names model.implicit_modules)] in
++  let exports = if List.is_empty model.export_facts then []
++    else [("exports", `A (List_.map export model.export_facts))] in
++  `O (implicit @ exports)
++
+ let rec translate_metavar_cond cond : [> `O of (string * Yaml.value) list ] =
+   match cond with
+   | CondEval e -> `O [ ("comparison", `String (range_to_string e.e_range)) ]
+@@ -68,9 +85,12 @@
+         match lang with
+         | None -> []
+         | Some x -> [ ("language", `String (Xlang.to_string x)) ])
+-  | CondName { mvar; kind; modules; symbol } ->
++  | CondName { mvar; kind; modules; symbol; imports } ->
+       `O
+         ([ ("metavariable", `String mvar) ]
++        @ (match imports with
++          | None -> []
++          | Some model -> [("imports", translate_import_model model)])
+         @ (match symbol with None -> [] | Some names -> [("symbol", `A (List_.map (fun name -> `String name) names))])
+         @ (match kind with
+           | Some DjangoView -> [ ("kind", `String "django-view") ]
+--- a/src/parsing/Parse_rule_formula.ml
++++ b/src/parsing/Parse_rule_formula.ml
+@@ -236,7 +236,7 @@
+   | MetavarPattern of MV.mvar * Xlang.t option * Rule.formula
+   | MetavarComparison of metavariable_comparison
+   | MetavarAnalysis of MV.mvar * Rule.metavar_analysis_kind
+-  | MetavarName of MV.mvar * Rule.metavar_name_kind option * string list option * string list option
++  | MetavarName of MV.mvar * Rule.metavar_name_kind option * string list option * string list option * Rule.import_model option
+ 
+ (* old: | PatWherePython of string, but it was too dangerous.
+  * MetavarComparison is not as powerful, but safer.
+@@ -440,8 +440,8 @@
+                     | Some true -> rewrite_metavar_comparison_strip comparison
+                     | _ -> comparison)
+               | MetavarAnalysis (mvar, kind) -> R.CondAnalysis (mvar, kind)
+-              | MetavarName (mvar, kind, modules, symbol) ->
+-                  R.CondName { mvar; kind; modules; symbol }
++              | MetavarName (mvar, kind, modules, symbol, imports) ->
++                  R.CondName { mvar; kind; modules; symbol; imports }
+             in
+             let/ name_constraint =
+               match (H.dict_take_opt dict "metavariable-name",
+@@ -709,6 +709,9 @@
+         else Ok fields) "symbol" in
+       let/ () = if Option.is_some symbol && Option.is_none module_ && Option.is_none modules
+         then error_at_key env.id key "symbol requires module or modules" else Ok () in
++      let/ imports = take_opt mv_name_dict env Parse_import_model.parse "imports" in
++      let/ () = if Option.is_some imports && (Option.is_some kind_str || Option.is_none symbol)
++        then error_at_key env.id key "imports requires a symbol and module constraint without kind" else Ok () in
+       let/ () = if Hashtbl.length mv_name_dict.h > 0
+         then error_at_key env.id key "Unknown or duplicate name constraint properties" else Ok () in
+       match (kind_str, module_, modules) with
+@@ -732,7 +735,7 @@
+                  kind,
+                  (match modules with
+                  | None -> Option.map (fun x -> [ x ]) module_
+-                 | _ -> modules), symbol )))
++                 | _ -> modules), symbol, imports )))
+   | _ -> error_at_key env.id key ("wrong parse_extra field: " ^ fst key)
+ 
+ (*****************************************************************************)
+--- a/src/rule/Rule.ml
++++ b/src/rule/Rule.ml
+@@ -140,10 +140,22 @@
+   | CondNestedFormula of Mvar.t * Xlang.t option * formula
+   | CondName of metavar_cond_name
+ 
++and import_export_fact = {
++  export_module : string;
++  export_name : string;
++  export_origin : (string * string list) option;
++}
++
++and import_model = {
++  implicit_modules : string list;
++  export_facts : import_export_fact list;
++}
++
+ and metavar_cond_name = {
+   mvar : Mvar.t;
+   kind : metavar_name_kind option;
+   symbol : string list option;
++  imports : import_model option;
+   modules : string list option;
+       (** A list of user-facing module names.
+ 

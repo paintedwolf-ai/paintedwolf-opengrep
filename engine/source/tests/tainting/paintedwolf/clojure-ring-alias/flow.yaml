@@ -1,0 +1,73 @@
+{
+  "rules": [
+    {
+      "id": "lycaon.clojure.ring-code-injection",
+      "languages": [
+        "clojure"
+      ],
+      "severity": "ERROR",
+      "message": "Registered Ring request input reaches Clojure code loading",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern-either": [
+                {
+                  "pattern": "(ring.adapter.jetty/run-jetty (fn [$REQ] ...) ...)"
+                },
+                {
+                  "pattern": "(ring.adapter.jetty/run-jetty (ring.middleware.params/wrap-params (fn [$REQ] ...)) ...)"
+                }
+              ]
+            },
+            {
+              "focus-metavariable": "$REQ"
+            }
+          ],
+          "exact": true,
+          "label": "RING_REQUEST"
+        },
+        {
+          "exact": true,
+          "label": "HTTP_VALUE",
+          "requires": "RING_REQUEST",
+          "pattern-either": [
+            {
+              "pattern": "(:query-string $REQ)"
+            },
+            {
+              "pattern": "(:query-params $REQ)"
+            }
+          ]
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "(clojure.core/load-string $X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires": "HTTP_VALUE"
+        }
+      ],
+      "metadata": {
+        "category": "security",
+        "cwe": "CWE-95",
+        "confidence": "HIGH",
+        "technology": [
+          "clojure"
+        ],
+        "references": [
+          "https://ring-clojure.github.io/ring/ring.middleware.params.html",
+          "https://ring-clojure.github.io/ring/ring.adapter.jetty.html"
+        ],
+        "description": "Models inline Jetty handlers and parameter middleware through fully qualified calls. Namespace aliases and separately bound handlers need binding models before admission."
+      }
+    }
+  ]
+}

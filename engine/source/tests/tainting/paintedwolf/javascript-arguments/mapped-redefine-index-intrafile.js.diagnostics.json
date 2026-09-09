@@ -1,0 +1,12 @@
+[
+  {
+    "type": "PartialSemantics",
+    "construct": "unsupported_ast_to_il:MappedArguments",
+    "line": 2
+  },
+  {
+    "type": "PartialSemantics",
+    "construct": "unsupported_ast_to_il:MappedArguments",
+    "line": 5
+  }
+]

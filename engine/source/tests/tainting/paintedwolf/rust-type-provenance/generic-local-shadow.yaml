@@ -1,0 +1,94 @@
+{
+  "rules": [
+    {
+      "id": "query-type",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "query-type",
+      "patterns": [
+        {
+          "pattern": "fn $F(..., $REQ: $TYPE<$ARG>, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "axum.extract",
+            "symbol": [
+              "Query"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "query-whole-type",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "query-whole-type",
+      "patterns": [
+        {
+          "pattern": "fn $F(..., $REQ: $TYPE, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "axum.extract",
+            "symbol": [
+              "Query"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "command-factory",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "command-factory",
+      "patterns": [
+        {
+          "pattern": "$CALL(...)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$CALL",
+            "module": "std.process",
+            "symbol": [
+              "Command",
+              "new"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "client-factory",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "client-factory",
+      "patterns": [
+        {
+          "pattern": "$CALL(...)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$CALL",
+            "module": "reqwest",
+            "symbol": [
+              "Client",
+              "builder"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

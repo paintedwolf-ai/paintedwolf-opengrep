@@ -1,0 +1,2 @@
+// ok: binding
+require("other")();

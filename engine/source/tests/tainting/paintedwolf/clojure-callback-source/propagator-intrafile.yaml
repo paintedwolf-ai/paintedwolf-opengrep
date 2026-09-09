@@ -1,0 +1,51 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "clojure"
+      ],
+      "severity": "ERROR",
+      "message": "Registered request input reaches code loading",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "(source)",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "(sink $VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-propagators": [
+        {
+          "pattern": "(dispatch $VALUE $HANDLER)",
+          "from": "$VALUE",
+          "to": "$HANDLER",
+          "to-parameter": {
+            "index": 0,
+            "path": [
+              ":query"
+            ],
+            "arities": [
+              1,
+              3
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

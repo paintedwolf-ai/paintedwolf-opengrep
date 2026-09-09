@@ -1,0 +1,1 @@
+{"rules": [{"id": "closure-context", "languages": ["javascript"], "severity": "ERROR", "message": "Known closure call context", "mode": "taint", "options": {"taint_assume_safe_functions": false, "taint_intrafile": true, "guarded_taint_signatures": true}, "pattern-sources": [{"pattern": "factory()"}], "pattern-sinks": [{"pattern": "sink($VALUE)"}]}]}

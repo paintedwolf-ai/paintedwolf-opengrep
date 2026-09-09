@@ -1,0 +1,41 @@
+rules:
+- id: shell-export
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Exact imported shell API
+  patterns:
+  - pattern: $CALL(...)
+  - metavariable-name:
+      metavariable: $CALL
+      modules: [node:child_process, child_process]
+      symbol: [exec]
+- id: module-root
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Imported factory module
+  patterns:
+  - pattern: $CALL(...)
+  - metavariable-name:
+      metavariable: $CALL
+      module: express
+      symbol: []
+- id: router-export
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Exact imported router export
+  patterns:
+  - pattern: $CALL(...)
+  - metavariable-name:
+      metavariable: $CALL
+      module: express
+      symbol: [Router]
+- id: nested-export
+  languages: [javascript, typescript]
+  severity: ERROR
+  message: Exact nested module export
+  patterns:
+  - pattern: $CALL(...)
+  - metavariable-name:
+      metavariable: $CALL
+      module: node:fs
+      symbol: [promises, readFile]

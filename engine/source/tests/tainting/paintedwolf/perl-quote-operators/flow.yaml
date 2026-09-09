@@ -1,0 +1,17 @@
+rules:
+- id: flow
+  languages: [perl]
+  severity: ERROR
+  message: External input reaches an interpreter
+  mode: taint
+  pattern-sources:
+  - pattern: CGI::param(...)
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern-either:
+      - pattern: eval($X)
+      - pattern: system($X)
+      - pattern: qx($X)
+      - pattern: open($HANDLE, $X)
+    - focus-metavariable: $X

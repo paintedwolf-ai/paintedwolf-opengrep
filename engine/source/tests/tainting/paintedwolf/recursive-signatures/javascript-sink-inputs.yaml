@@ -1,0 +1,15 @@
+rules:
+- id: recursive-flow
+  languages:
+  - javascript
+  message: Request input reaches command execution
+  severity: ERROR
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: req.query.$FIELD
+  pattern-sinks:
+  - patterns:
+    - pattern: exec($VALUE)
+    - focus-metavariable: $VALUE

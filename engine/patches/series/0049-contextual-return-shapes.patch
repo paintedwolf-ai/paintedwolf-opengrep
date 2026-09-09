@@ -1,0 +1,226 @@
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -141,6 +141,7 @@
+           retry. *)
+   callback_requests : Taint_callback_models.request list ref;
+   model_preservations : Range.t list ref;
++  return_values : (F.nodei, S.shape) Hashtbl.t;
+   signature_db : Shape_and_sig.signature_database option;
+       (** Signature database for inter-procedural taint analysis *)
+   builtin_signature_db : Shape_and_sig.builtin_signature_database option;
+@@ -3622,6 +3623,50 @@
+         | _ -> env)
+     | None -> env
+ 
++let join_return_shape left right =
++  match (left, right) with
++  | None, shape | shape, None -> shape
++  | Some left, Some right ->
++      let (S.Cell (_, shape)) =
++        Shape.join_cell (S.Cell (`None, left)) (S.Cell (`None, right))
++      in
++      Some shape
++
++let contextual_return_shape env (body : F.fun_cfg) mapping =
++  let flow = body.cfg in
++  let live index =
++    CFG.NodeiSet.mem index flow.reachable
++    && not (Lval_env.is_dead mapping.(index).D.out_env)
++  in
++  let shapes =
++    flow.graph#nodes#tolist
++    |> List.fold_left
++         (fun shapes (index, node) ->
++           match node.F.n with
++           | NReturn _ when live index ->
++               let shape =
++                 Hashtbl.find_opt env.return_values index
++                 |> Option.value ~default:S.Bot
++               in
++               join_return_shape shapes (Some shape)
++           | _ -> shapes)
++         None
++  in
++  let visited = ref CFG.NodeiSet.empty in
++  let rec fallthrough index =
++    if CFG.NodeiSet.mem index !visited || not (live index) then false
++    else (
++      visited := CFG.NodeiSet.add index !visited;
++      match (flow.graph#nodes#find index).F.n with
++      | NReturn _ | NThrow _ -> false
++      | Exit | NOther (Noop _) | NGoto _ | Join ->
++          CFG.predecessors flow index
++          |> List.exists (fun (index, _) -> fallthrough index)
++      | _ -> true)
++  in
++  if fallthrough flow.exit then join_return_shape shapes (Some S.Bot)
++  else shapes
++
+ let rec transfer : env -> fun_cfg:F.fun_cfg -> Lval_env.t D.transfn =
+  fun enter_env ~fun_cfg
+      (* the transfer function to update the mapping at node index ni *)
+@@ -3783,6 +3828,7 @@
+     | NReturn (tok, e) ->
+         (* TODO: Move most of this to check_tainted_return. *)
+         let taints, shape, lval_env' = check_tainted_return env tok e in
++        Hashtbl.replace env.return_values ni shape;
+         let effects = effects_of_tainted_return env taints shape tok in
+         record_effects env effects;
+         lval_env'
+@@ -4007,7 +4053,7 @@
+     Log.debug (fun m ->
+         m "There are %d lambda(s) occurring in: %s" num_lambdas
+           (Display_IL.short_string_of_node_kind node.F.n));
+-  let effects_lambdas, out_envs_lambdas =
++  let effects_lambdas, out_envs_lambdas, return_shapes =
+     lambdas_to_analyze
+     |> List_.map (fun (lambda_name, lambda_cfg) ->
+            let binding_effects, rebind_guard, inputs =
+@@ -4037,13 +4083,24 @@
+                 | _ -> ());
+                [join_contexts inputs])
+            in
+-           let effects, outputs = inputs |> List_.map (fun lambda_in_env ->
++           let results = inputs |> List_.map (fun lambda_in_env ->
+              fixpoint_lambda env.taint_inst env.func needed_vars lambda_name
+                lambda_cfg lambda_in_env ?signature_db:env.signature_db
+                ?builtin_signature_db:env.builtin_signature_db
+-               ?call_graph:env.call_graph ~rebind_guard ()) |> List_.split in
+-           (Effects.union binding_effects (Effects.union_list effects), join_contexts outputs))
+-    |> List_.split
++               ?call_graph:env.call_graph ~rebind_guard ()) in
++           let effects, outputs, shapes =
++             List.fold_right
++               (fun (lambda_effects, output, shape) (effects, outputs, shapes) ->
++                 (lambda_effects :: effects, output :: outputs, shape :: shapes))
++               results ([], [], [])
++           in
++           let shape = List.fold_left join_return_shape None shapes in
++           (Effects.union binding_effects (Effects.union_list effects), join_contexts outputs, shape))
++    |> fun results ->
++    List.fold_right
++      (fun (lambda_effects, output, shape) (effects, outputs, shapes) ->
++        (lambda_effects :: effects, output :: outputs, shape :: shapes))
++      results ([], [], [])
+   in
+   let effects = Effects.union_list effects_lambdas
+     |> Effects.filter (function ToReturn _ -> false | _ -> true) in
+@@ -4095,35 +4143,54 @@
+   in
+   let out_env =
+     match node.F.n with
+-    | NInstr { i = Call (Some result, _, _); iorig } ->
+-        List.fold_left2
+-          (fun current (candidate, cfg) effects ->
+-            if
+-              (match direct_call candidate cfg with Taint_lambda_call.Call _ -> true | _ -> false)
+-            then
+-              Effects.fold
+-                (fun eff current ->
+-                  match eff with
+-                  | ToReturn { data_taints; data_shape; control_taints; guards; _ } ->
+-                      let current = Lval_env.add_control_taints current control_taints in
+-                      let taints =
+-                        data_taints
+-                        |> Taints.conjoin_guard guards
+-                        |> Taints.map_taint
+-                             (fun t -> { t with T.tokens = List.rev t.T.tokens })
+-                      in
+-                      check_orig_if_sink env iorig taints data_shape;
+-                      Lval_env.union current (Lval_env.add_lval_shape env.taint_inst.lang result taints data_shape current)
+-                  | _ -> current)
+-                effects current
++    | NInstr { i = Call (Some result, callee, args); iorig } ->
++        let taints, returned_shape, out_env =
++          List.fold_left2
++            (fun (taints, returned_shape, current) ((candidate, cfg), shape) effects ->
++              match direct_call candidate cfg with
++              | Taint_lambda_call.Call _ ->
++                  let taints, current = Effects.fold
++                    (fun eff (taints, current) ->
++                      match eff with
++                      | ToReturn { data_taints; control_taints; guards; _ } ->
++                          let current = Lval_env.add_control_taints current control_taints in
++                          let returned = data_taints |> Taints.conjoin_guard guards
++                            |> Taints.map_taint (fun t -> { t with T.tokens = List.rev t.T.tokens }) in
++                          (Taints.union taints returned, current)
++                      | _ -> (taints, current))
++                    effects (taints, current) in
++                  (taints, join_return_shape returned_shape shape, current)
++              | _ -> (taints, returned_shape, current))
++            (Taints.empty, None, out_env)
++            (List.combine lambdas_to_analyze return_shapes) effects_lambdas
++        in
++        (match returned_shape with
++        | None -> out_env
++        | Some returned_shape ->
++            check_orig_if_sink env iorig taints returned_shape;
++            let previous_taints, previous_shape =
++              match Lval_env.find_lval env.taint_inst.lang out_env result with
++              | Some (S.Cell (xtaint, shape)) -> (Xtaint.to_taints xtaint, shape)
++              | None -> (Taints.empty, S.Bot) in
++            let shape =
++              if contextual_call_is_known env callee args then
++                Shape.unify_shape previous_shape returned_shape
++              else
++                match Shape.join_cell (S.Cell (`None, previous_shape))
++                        (S.Cell (`None, returned_shape)) with
++                | S.Cell (_, shape) -> shape in
++            let current = Lval_env.clean env.taint_inst.lang out_env result
++              |> Lval_env.add_lval_shape env.taint_inst.lang result
++                   (Taints.union previous_taints taints) shape in
++            if Lang.is_js env.taint_inst.lang then
++              Taint_model_types.share_value env.taint_inst.lang current result
+             else current)
+-          out_env lambdas_to_analyze effects_lambdas
+     | _ -> out_env
+   in
+   (effects, out_env)
+ 
+ and fixpoint_lambda taint_inst func needed_vars lambda_name lambda_cfg in_env
+-    ?signature_db ?builtin_signature_db ?call_graph ?rebind_guard () : Effects.t * Lval_env.t
++    ?signature_db ?builtin_signature_db ?call_graph ?rebind_guard () : Effects.t * Lval_env.t * S.shape option
+     =
+   let func =
+     {
+@@ -4135,8 +4202,9 @@
+       m "Analyzing lambda %s (%s)"
+         (IL.str_of_name lambda_name)
+         (Lval_env.to_string in_env));
++  let return_shapes = ref None in
+   let effects, mapping =
+-    fixpoint_aux taint_inst func ~needed_vars ?rebind_guard ~enter_lval_env:in_env
++    fixpoint_aux taint_inst func ~needed_vars ?rebind_guard ~return_shapes ~enter_lval_env:in_env
+       ~in_lambda:(Some lambda_name) ~class_name:None ?signature_db
+       ?builtin_signature_db ?call_graph lambda_cfg
+   in
+@@ -4155,9 +4223,9 @@
+         (Lval_env.to_string out_env)
+         (IL.NameSet.show needed_vars)
+         (Lval_env.to_string out_env'));
+-  (effects, out_env')
+-
+-and fixpoint_aux taint_inst func ?(needed_vars = IL.NameSet.empty)
++  (effects, out_env', !return_shapes)
++
++and fixpoint_aux taint_inst func ?return_shapes ?(needed_vars = IL.NameSet.empty)
+     ?(rebind_guard = fun guard -> Some guard)
+     ~enter_lval_env ~in_lambda ?class_name ?signature_db ?builtin_signature_db
+     ?call_graph fun_cfg =
+@@ -4180,6 +4248,7 @@
+       did_self_recurse = ref false;
+       callback_requests = ref [];
+       model_preservations = ref [];
++      return_values = Hashtbl.create 16;
+       signature_db;
+       builtin_signature_db;
+       call_graph;
+@@ -4273,6 +4342,8 @@
+         ~trans:(transfer env ~fun_cfg) ~forward:true ~flow
+   in
+   log_timeout_warning taint_inst env.func.name timeout_status;
++  Option.iter (fun shapes ->
++    shapes := contextual_return_shape env fun_cfg end_mapping) return_shapes;
+   let exit_lval_env = end_mapping.(flow.exit).D.out_env in
+   effects_from_arg_updates_at_exit enter_lval_env exit_lval_env
+   |> record_effects env;

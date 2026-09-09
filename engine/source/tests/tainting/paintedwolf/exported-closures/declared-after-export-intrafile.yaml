@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "message": "Exported closures preserve module binding identity",
+      "severity": "ERROR",
+      "mode": "taint",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

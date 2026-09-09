@@ -1,0 +1,19 @@
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -236,9 +236,13 @@
+       match List.assoc_opt variable m.spec_pm.env with
+       | Some value -> (
+           match Metavariable.mvalue_to_any value with
+-          | G.E { e = G.N name; _ } -> (
+-              let lval = LV.lval_of_var (AST_to_IL.var_of_name name) in
+-              match Lval_env.find_lval env.taint_inst.lang env.lval_env lval with
++          | G.E expression -> (
++              let cell =
++                match Taint_model_types.lval_of_expression expression with
++                | Some lval -> Lval_env.find_lval env.taint_inst.lang env.lval_env lval
++                | None -> Lval_env.find_value env.lval_env expression
++              in
++              match cell with
+               | Some (S.Cell (_, S.Scalar actual)) ->
+                   R.equal_taint_value_type actual kind
+               | _ -> false)

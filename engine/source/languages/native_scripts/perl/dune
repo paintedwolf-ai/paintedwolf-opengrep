@@ -1,0 +1,13 @@
+(library
+ (public_name semgrep.native_perl)
+ (name native_perl)
+ (wrapped false)
+ (modules Parse_perl_native)
+ (libraries semgrep.native_script_tree commons lib_parsing lib_parsing_tree_sitter ast_generic tree-sitter.run)
+ (foreign_stubs
+  (language c)
+  (include_dirs include)
+  (extra_deps ../bindings.h)
+  (names bindings parser scanner)
+  (flags -std=c99 -fPIC -I %{env:TREESITTER_INCDIR=/usr/local/include}))
+ (c_library_flags -L%{env:TREESITTER_LIBDIR=/usr/local/lib} -ltree-sitter))

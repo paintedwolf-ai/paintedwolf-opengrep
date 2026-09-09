@@ -1,0 +1,13 @@
+rules:
+- id: flow
+  languages: [perl]
+  severity: ERROR
+  message: External input reaches the sink
+  mode: taint
+  pattern-sources:
+  - pattern: source()
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($X)
+    - focus-metavariable: $X

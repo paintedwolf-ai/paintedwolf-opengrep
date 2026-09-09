@@ -1,0 +1,326 @@
+--- a/languages/swift/generic/Parse_swift_tree_sitter.ml
++++ b/languages/swift/generic/Parse_swift_tree_sitter.ml
+@@ -1056,7 +1056,68 @@
+   | `Regex_lit x -> map_regex_literal env x
+   | `Nil tok -> G.L (G.Null ((* "nil" *) token env tok)) |> G.e
+ 
++and swift_condition_operator (env : env) (expression : CST.binary_expression) =
++  match expression with
++  | `Equa_exp (left, operator, right) ->
++      let op, (_, tok) = map_equality_operator env operator in
++      Some (left, (op, tok, 3), right)
++  | `Comp_exp (left, operator, right) ->
++      let op, (_, tok) = map_comparison_operator env operator in
++      Some (left, (op, tok, 3), right)
++  | `Conj_exp (left, tok, right) -> Some (left, (G.And, token env tok, 2), right)
++  | `Disj_exp (left, tok, right) -> Some (left, (G.Or, token env tok, 1), right)
++  | `Infix_exp (left, operator, right) ->
++      let name, tok = map_custom_operator env operator in
++      let op = match name with
++        | "==" -> Some G.Eq | "!=" -> Some G.NotEq
++        | "===" -> Some G.PhysEq | "!==" -> Some G.NotPhysEq
++        | "<" -> Some G.Lt | "<=" -> Some G.LtE
++        | ">" -> Some G.Gt | ">=" -> Some G.GtE
++        | _ -> None
++      in
++      Option.map (fun op -> (left, (op, tok, 3), right)) op
++  | _ -> None
++
++(* Recover standard condition precedence without crossing explicit groups or custom operators. *)
++and swift_condition_terms env (expression : CST.expr_hack_at_ternary_binary_suffix) =
++  match expression with
++  | `Exp (`Choice_simple_id (`Bin_exp binary)) ->
++      (match swift_condition_operator env binary with
++       | Some (left, operator, right) ->
++           swift_condition_terms env (`Exp left)
++           @ (`Operator operator :: swift_condition_terms env right)
++       | None -> [ `Operand (map_expr_hack_at_ternary_binary_suffix env expression) ])
++  | _ -> [ `Operand (map_expr_hack_at_ternary_binary_suffix env expression) ]
++
++and map_swift_condition_terms terms =
++  let reduce (op, tok, _) = function
++    | right :: left :: rest -> G.opcall (op, tok) [left; right] :: rest
++    | _ -> failwith "Missing operand in Swift condition"
++  in
++  let rec before incoming operators values =
++    match operators with
++    | ((_, _, precedence) as operator) :: rest when precedence >= incoming ->
++        before incoming rest (reduce operator values)
++    | _ -> (operators, values)
++  in
++  let operators, values = List.fold_left (fun (operators, values) term ->
++    match term with
++    | `Operand value -> (operators, value :: values)
++    | `Operator ((_, _, precedence) as operator) ->
++        let operators, values = before precedence operators values in
++        (operator :: operators, values)) ([], []) terms
++  in
++  match List.fold_left (fun values operator -> reduce operator values) values operators with
++  | [value] -> value
++  | _ -> failwith "Invalid Swift condition sequence"
++
+ and map_binary_expression (env : env) (x : CST.binary_expression) =
++  match swift_condition_operator env x with
++  | Some _ ->
++      map_swift_condition_terms (swift_condition_terms env (`Exp (`Choice_simple_id (`Bin_exp x))))
++  | None -> map_binary_expression_unclassified env x
++
++and map_binary_expression_unclassified (env : env) (x : CST.binary_expression) =
+   let opcall (op, (_s, tok)) = G.opcall (op, tok) in
+   match x with
+   | `Mult_exp (v1, v2, v3) ->
+@@ -1601,38 +1662,57 @@
+   (* A guard statement seems to be semantically equivalent to an "if not".
+    *)
+   let v1 = (* "guard" *) token env v1 in
+-  let v2 = map_if_condition_sequence_item env v2 in
++  let v2 = map_if_condition_sequence_item ~optional_bindings:true env v2 in
+   let v3 =
+     List_.map
+       (fun (v1, v2) ->
+         let _v1 = (* "," *) token env v1 in
+-        let v2 = map_if_condition_sequence_item env v2 in
++        let v2 = map_if_condition_sequence_item ~optional_bindings:true env v2 in
+         v2)
+       v3
+   in
+   let cond = combine_conds v2 v3 in
+   let body = map_function_body env v5 in
+-  G.If (v1, G.Cond (G.special (G.Op G.Not, G.fake "not") [ cond ]), body, None)
+-  |> G.s
+-
+-(* Swift allows conditions to appear in a comma-separated list. The semantics are such that
+-   it only proceeds into the case if all of them are true. It also short-circuits.
+-   In other words, it's just an AND of all of their values. So we choose to represent it as
+-   such with this function.
+-*)
+-and combine_conds cond conds =
+-  List.fold_left
+-    (fun acc x ->
+-      G.Call
+-        ( G.IdSpecial (G.Op G.And, G.fake "&&") |> G.e,
+-          Tok.unsafe_fake_bracket [ G.Arg acc; G.Arg x ] )
+-      |> G.e)
+-    cond conds
+-
+-and map_if_condition_sequence_item (env : env)
++  let condition =
++    if List.exists is_optional_binding (v2 :: v3) then
++      G.OtherCond (("SwiftGuardConditions", v1), [ G.E cond ])
++    else G.Cond (G.special (G.Op G.Not, G.fake "not") [ cond ])
++  in
++  G.If (v1, condition, body, None) |> G.s
++
++(* Comma-separated conditions use Boolean semantics independently of operator overloads. *)
++and combine_conds cond = function
++  | [] -> cond
++  | conds ->
++      G.OtherExpr (("SwiftConditionSequence", G.fake ","),
++        List.map (fun condition -> G.E condition) (cond :: conds)) |> G.e
++
++and is_optional_binding expression =
++  match expression.G.e with
++  | G.OtherExpr (("SwiftOptionalBinding", _), _) -> true
++  | _ -> false
++
++and optional_binding_pattern = function
++  | G.OtherPat ((("let" | "var"), tok), [ G.P pattern ]) -> (tok, pattern)
++  | G.PatTyped (pattern, ty) ->
++      let tok, pattern = optional_binding_pattern pattern in
++      (tok, G.PatTyped (pattern, ty))
++  | _ -> failwith "Unexpected optional binding pattern"
++
++and optional_binding_identifier = function
++  | G.PatId (ident, _) -> ident
++  | G.PatTyped (pattern, _) -> optional_binding_identifier pattern
++  | _ -> failwith "Missing identifier in shorthand optional binding"
++
++and map_if_condition_sequence_item ?(optional_bindings = false) (env : env)
+     (x : CST.if_condition_sequence_item) : G.expr =
+   match x with
+   | `If_let_bind (v1, v2, v3) ->
++      let is_optional =
++        optional_bindings && match v1 with
++        | `Bind_kind_and_pat _, _ -> true
++        | _ -> false
++      in
+       let v1 = map_direct_or_indirect_binding env v1 in
+       let v2 =
+         match (v1, v2) with
+@@ -1640,9 +1720,12 @@
+             let _v1TODO = (* eq_custom *) token env v1 in
+             let v2 = map_expression env v2 in
+             v2
+-        | G.OtherPat (_, G.P (G.PatId (ident, info)) :: _), None ->
+-            (* if let shorthand for shadowing an existing optional variable since Swift 5.7 *)
+-            G.N (G.Id (ident, info)) |> G.e
++        | pattern, None when is_optional ->
++            let _, pattern = optional_binding_pattern pattern in
++            let ident = optional_binding_identifier pattern in
++            G.N (G.Id (ident, G.empty_id_info ())) |> G.e
++        | G.OtherPat (_, G.P (G.PatId (ident, _)) :: _), None ->
++            G.N (G.Id (ident, G.empty_id_info ())) |> G.e
+         | _, None ->
+             (* Does not appear to be valid Swift code *)
+             failwith "Missing initializer in condition"
+@@ -1651,7 +1734,10 @@
+        * very old Swift code that used to be legal
+        *)
+       let _v3 = Option.map (map_where_clause env) v3 in
+-      G.LetPattern (v1, v2) |> G.e
++      if is_optional then
++        let tok, pattern = optional_binding_pattern v1 in
++        G.OtherExpr (("SwiftOptionalBinding", tok), [ G.P pattern; G.E v2 ]) |> G.e
++      else G.LetPattern (v1, v2) |> G.e
+   | `Exp x -> map_expression env x
+   | `Avai_cond (v1, v2, v3, v4, v5) ->
+       let _v1TODO = (* "#available" *) token env v1 in
+@@ -1672,7 +1758,7 @@
+ 
+ and map_if_statement (env : env) ((v1, v2, v3, v4, v5) : CST.if_statement) =
+   let v1 = (* "if" *) token env v1 in
+-  let v2 = map_if_condition_sequence_item env v2 in
++  let v2 = map_if_condition_sequence_item ~optional_bindings:true env v2 in
+   let v3 =
+     (* TODO: looks like we could desugar this to a bunch of And expressions, but
+      * need to double-check semantics. For now just raise if we encounter this.
+@@ -1680,7 +1766,7 @@
+     List_.map
+       (fun (v1, v2) ->
+         let _v1 = (* "," *) token env v1 in
+-        let v2 = map_if_condition_sequence_item env v2 in
++        let v2 = map_if_condition_sequence_item ~optional_bindings:true env v2 in
+         v2)
+       v3
+   in
+@@ -1694,7 +1780,12 @@
+         Some v2
+     | None -> None
+   in
+-  G.If (v1, G.Cond cond, v4, v5) |> G.s
++  let condition =
++    if List.exists is_optional_binding (v2 :: v3) then
++      G.OtherCond (("SwiftIfConditions", v1), [ G.E cond ])
++    else G.Cond cond
++  in
++  G.If (v1, condition, v4, v5) |> G.s
+ 
+ and map_import_declaration (env : env)
+     ((v1, v2, v3, v4) : CST.import_declaration) =
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -1384,6 +1384,18 @@
+   in
+   (test_stmts @ setup @ [branch], mk_e (Fetch result) eorig)
+ 
++and swift_optional_binding env g_expr tok pattern initial_expression =
++  let statements, initial_value = expr env initial_expression in
++  let setup, _, snapshot = aux_var ~force:true env tok initial_value in
++  let value = mk_e (Fetch snapshot) (related_exp initial_expression) in
++  let condition =
++    mk_e (Operator ((G.NotEq, tok),
++      [Unnamed initial_value; Unnamed (mk_e (Literal (G.Null tok)) NoOrig)]))
++      (related_exp initial_expression)
++  in
++  let bindings = pattern_assign_statements env ~eorig:(SameAs g_expr) value pattern in
++  (statements @ setup @ [mk_s (If (tok, condition, bindings, []))], condition)
++
+ and expr_aux env ?(void = false) g_expr : stmts * exp =
+   let eorig = SameAs g_expr in
+   match g_expr.G.e with
+@@ -1393,6 +1405,14 @@
+       let target = lval_of_id_info id info in
+       (statements @ [mk_s (Instr (mk_i (Assign (target, value)) eorig))],
+        mk_e (Fetch target) eorig)
++  | G.OtherExpr (("SwiftConditionSequence", tok), G.E first :: remaining)
++    when env.lang =*= Lang.Swift ->
++      let args = List.map (function G.E condition -> G.Arg condition
++        | value -> impossible value) remaining in
++      expr_lazy_op ~boolean_semantics:true env G.And tok (G.Arg first) args eorig
++  | G.OtherExpr (("SwiftOptionalBinding", tok), [G.P pattern; G.E initial_expression])
++    when env.lang =*= Lang.Swift ->
++      swift_optional_binding env g_expr tok pattern initial_expression
+   | G.OtherExpr (("Try", _), [G.E expression]) when env.lang =*= Lang.Swift ->
+       expr env ~void expression
+   | G.OtherExpr (("ArrayAccess[[xs]]", tok), [G.E base; G.Args [G.Arg index]]) when env.lang =*= Lang.R ->
+@@ -1410,7 +1430,7 @@
+   | G.Call ({ e = G.IdSpecial (G.Op op, tok); _ }, args) -> (
+       match op with
+       | op when (op =*= G.Elvis && (env.lang =*= Lang.Kotlin || env.lang =*= Lang.Csharp))
+-                || (op =*= G.Nullish && env.lang =*= Lang.Perl) -> (
++                || (op =*= G.Nullish && (env.lang =*= Lang.Perl || env.lang =*= Lang.Swift)) -> (
+           (* This implements the logic:
+            * result = lhs
+            * if (result == null) { result = rhs; }
+@@ -2774,7 +2794,7 @@
+       ([], mk_e (Literal void) (related_tok tok))
+   | Some e -> expr env e
+ 
+-and expr_lazy_op env op tok arg0 args eorig : stmts * exp =
++and expr_lazy_op ?(boolean_semantics = false) env op tok arg0 args eorig : stmts * exp =
+   let result = fresh_lval tok in
+   let constants = Eval_il_partial.mk_env env.lang Dataflow_var_env.VarMap.empty in
+   let rec evaluate arg rest =
+@@ -2796,7 +2816,11 @@
+           match Eval_il_partial.eval_bool constants condition with
+           | Some true -> selected
+           | Some false -> initial
+-          | None -> Eval_il_partial.union initial selected
++          | None ->
++              (match boolean_semantics, op, selected with
++               | true, G.And, G.Lit (G.Bool (false, _))
++               | true, G.Or, G.Lit (G.Bool (true, _)) -> selected
++               | _ -> Eval_il_partial.union initial selected)
+         in
+         (statements @ [store; mk_s (If (tok, condition, branch, []))], constant)
+   in
+@@ -4189,6 +4213,14 @@
+       G.Switch (tok, cond_opt, cases_and_bodies) |> G.s
+     in
+     stmt env switch
++  | G.If (tok, G.OtherCond ((("SwiftIfConditions" | "SwiftGuardConditions") as kind, _),
++                           [G.E condition]), success, failure)
++    when env.lang =*= Lang.Swift ->
++      let statements, condition = expr env condition in
++      let condition = if kind = "SwiftGuardConditions" then IL_helpers.wrap_not condition else condition in
++      let success = stmt env success in
++      let failure = List.concat_map (stmt env) (Option.to_list failure) in
++      statements @ [mk_s (If (tok, condition, success, failure))]
+   | G.If (tok, cond_e, st1, st2) ->
+       let ss, e' = cond env cond_e in
+       let st1 = stmt env st1 in
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -1239,6 +1239,11 @@
+        * correct rebinding of the same variable in nested let. Therefore,
+        * if x appears in e, it must be from the outer scope and won't be
+        * the one declared by visiting pat first. *)
++      | OtherExpr (("SwiftOptionalBinding", _), [P pat; E e])
++        when lang =*= Lang.Swift ->
++        self#visit_expr venv e;
++        self#visit_pattern venv pat;
++        recurse := false
+       | LetPattern (pat, e) ->
+         self#visit_expr venv e;
+         self#visit_pattern venv pat;
+@@ -1303,6 +1308,20 @@
+     (* TODO: support other types of statements that create block scopes. *)
+     method! visit_stmt venv x =
+       match x.s with
++      | If (tok, OtherCond (("SwiftIfConditions", condition_tok), [E condition]), body, otherwise)
++        when lang =*= Lang.Swift ->
++          self#visit_tok venv tok;
++          self#visit_tok venv condition_tok;
++          with_new_block_scope env.names (fun () ->
++              self#visit_expr venv condition;
++              self#visit_stmt venv body);
++          Option.iter (self#visit_stmt venv) otherwise
++      | If (tok, OtherCond (("SwiftGuardConditions", condition_tok), [E condition]), failure, _)
++        when lang =*= Lang.Swift ->
++          self#visit_tok venv tok;
++          self#visit_tok venv condition_tok;
++          self#visit_stmt venv failure;
++          self#visit_expr venv condition
+       | If (tok, Cond e, s1, s2_opt) when has_block_scope lang ->
+           self#visit_tok venv tok;
+           self#visit_expr venv e;

@@ -1,0 +1,1 @@
+{"rules": [{"id": "flow", "languages": ["dart"], "message": "flow", "severity": "ERROR", "mode": "taint", "pattern-sources": [{"pattern": "source()", "exact": true}], "pattern-sinks": [{"patterns": [{"pattern": "sink($X)"}, {"focus-metavariable": "$X"}]}], "options": {"taint_assume_safe_indexes": true}}]}

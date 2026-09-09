@@ -1,0 +1,45 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "javascript"
+      ],
+      "mode": "taint",
+      "message": "Initializer callback retains its body",
+      "severity": "ERROR",
+      "options": {
+        "taint_intrafile": true
+      },
+      "pattern-sources": [
+        {
+          "patterns": [
+            {
+              "pattern": "bind($CALLBACK)"
+            },
+            {
+              "focus-metavariable": "$CALLBACK"
+            }
+          ],
+          "exact": true,
+          "to-parameter": {
+            "index": 0,
+            "path": []
+          }
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($VALUE)"
+            },
+            {
+              "focus-metavariable": "$VALUE"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

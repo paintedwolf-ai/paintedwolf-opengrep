@@ -1,0 +1,27 @@
+--- a/src/tainting/Xtaint.ml
++++ b/src/tainting/Xtaint.ml
+@@ -49,12 +49,9 @@
+ let compare xt1 xt2 =
+   match (xt1, xt2) with
+   | `Tainted taints1, `Tainted taints2 -> Taints.compare taints1 taints2
+-  | `None, `None
+-  | `Clean, `Clean ->
+-      0
+-  | `Tainted _, _ -> -1
+-  | `None, _ -> -1
+-  | `Clean, _ -> 1
++  | `None, `None | `Clean, `Clean -> 0
++  | `None, _ | `Clean, `Tainted _ -> -1
++  | _, `None | `Tainted _, `Clean -> 1
+ 
+ let show = function
+   | `Tainted taints -> Taint.show_taints taints
+@@ -88,3 +85,8 @@
+   | `Sanitized ->
+       Taints.empty
+   | `Tainted taints -> taints
++
++let%test "comparison orders every taint state consistently" =
++  let values = [`None; `Clean; `Tainted Taints.empty] in
++  List.for_all (fun left -> List.for_all (fun right ->
++    Int.equal (compare left right) (- (compare right left))) values) values

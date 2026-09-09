@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "labels",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Taint label translation",
+      "severity": "ERROR",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "label": "A"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink($X)",
+          "requires": "CHECK"
+        }
+      ],
+      "pattern-propagators": [
+        {
+          "pattern": "copy($FROM, $TO)",
+          "from": "$FROM",
+          "to": "$TO",
+          "label": "CHECK",
+          "requires": "A and not B"
+        }
+      ]
+    }
+  ]
+}

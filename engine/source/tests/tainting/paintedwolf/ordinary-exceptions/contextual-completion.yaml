@@ -1,0 +1,15 @@
+rules:
+- id: flow
+  languages: [javascript]
+  severity: ERROR
+  message: Keep ordinary and exceptional call completions separate
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: '"TAINTED"'
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE

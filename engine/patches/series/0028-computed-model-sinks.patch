@@ -1,0 +1,18 @@
+--- a/src/tainting/Dataflow_tainting.ml
++++ b/src/tainting/Dataflow_tainting.ml
+@@ -3122,7 +3122,14 @@
+           rhs_shape
+       in
+       let taints = Taints.union taints taints_propagated in
+-      check_orig_if_sink env instr.iorig taints rhs_shape;
++      let sink_env =
++        match LV.lval_of_instr_opt instr with
++        | Some ({ base = Var { value_origin = Some _; _ }; rev_offset = [] } as result) ->
++            Lval_env.clean env.taint_inst.lang lval_env result
++            |> Lval_env.add_lval_shape env.taint_inst.lang result taints rhs_shape
++        | _ -> lval_env
++      in
++      check_orig_if_sink { env with lval_env = sink_env } instr.iorig taints rhs_shape;
+       let taints =
+         match LV.lval_of_instr_opt instr with
+         | None -> taints

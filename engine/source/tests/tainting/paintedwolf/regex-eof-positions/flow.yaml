@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "endpoint",
+      "languages": [
+        "generic"
+      ],
+      "severity": "ERROR",
+      "message": "Original-byte finding endpoint",
+      "pattern-regex": "unsafe[^\\n]*(?:\\n|$)"
+    }
+  ]
+}

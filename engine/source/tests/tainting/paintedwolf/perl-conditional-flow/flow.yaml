@@ -1,0 +1,13 @@
+rules:
+  - id: flow
+    languages: [perl]
+    message: Input flows through conditional branches
+    severity: ERROR
+    mode: taint
+    pattern-sources:
+      - pattern: source()
+        exact: true
+    pattern-sinks:
+      - patterns:
+          - pattern: sink($VALUE)
+          - focus-metavariable: $VALUE

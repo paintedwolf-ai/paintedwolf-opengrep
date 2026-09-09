@@ -1,0 +1,17 @@
+rules:
+- id: flow
+  languages: [python]
+  severity: ERROR
+  message: Preserve thrown argument values
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: '"TAINTED"'
+    exact: true
+  - pattern: request.payload
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE

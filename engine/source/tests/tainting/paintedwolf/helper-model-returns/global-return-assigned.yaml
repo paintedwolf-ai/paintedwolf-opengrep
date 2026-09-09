@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "id": "model",
+      "languages": [
+        "javascript"
+      ],
+      "severity": "ERROR",
+      "message": "Model return",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "canonical(...)",
+          "exact": true,
+          "model-type": "Path"
+        },
+        {
+          "pattern": "trusted(...)",
+          "exact": true,
+          "model-type": "Path"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "observe($X)"
+            },
+            {
+              "focus-metavariable": "$X"
+            }
+          ],
+          "requires-model-type": {
+            "metavariable": "$X",
+            "type": "Path"
+          }
+        }
+      ],
+      "options": {
+        "taint_intrafile": true
+      }
+    }
+  ]
+}

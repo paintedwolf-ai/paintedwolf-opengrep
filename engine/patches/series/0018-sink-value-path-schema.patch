@@ -1,0 +1,32 @@
+diff --git a/rule_schema_v1.yaml b/rule_schema_v1.yaml
+--- a/rule_schema_v1.yaml
++++ b/rule_schema_v1.yaml
+@@ -135,9 +135,19 @@
+         type: string
+       label:
+         type: string
++  sink-value-path:
++    type: array
++    minItems: 1
++    maxItems: 16
++    items:
++      type: integer
++      minimum: 0
++      maximum: 2147483647
+   new-sink-pattern:
+     $ref: "#/$defs/new-pattern"
+     properties:
++      value-path:
++        $ref: "#/$defs/sink-value-path"
+       requires:
+         type: string
+   new-sanitizer-pattern:
+@@ -344,6 +354,8 @@
+       anyOf:
+         - type: object
+           properties:
++            value-path:
++              $ref: "#/$defs/sink-value-path"
+             model-singleton:
+               type: boolean
+             model-type:

@@ -1,0 +1,31 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "groovy"
+      ],
+      "severity": "ERROR",
+      "message": "Command argument flow",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()",
+          "exact": true
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "patterns": [
+            {
+              "pattern": "sink($ARG, ...)"
+            },
+            {
+              "focus-metavariable": "$ARG"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "id": "formals",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Source formals are unchanged",
+      "severity": "ERROR",
+      "pattern": "function f($ARG) { ... }"
+    },
+    {
+      "id": "argument-syntax",
+      "languages": [
+        "javascript"
+      ],
+      "message": "Arguments syntax is unchanged",
+      "severity": "ERROR",
+      "pattern": "sink(arguments[0])"
+    }
+  ]
+}

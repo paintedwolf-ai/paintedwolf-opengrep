@@ -1,0 +1,2 @@
+;; ruleid: exports
+(run "x")

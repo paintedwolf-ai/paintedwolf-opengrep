@@ -1,0 +1,18 @@
+[
+  {
+    "rule": "typed-constructor",
+    "line": 5,
+    "source": {
+      "line": 2,
+      "column": 34,
+      "end_line": 2,
+      "end_column": 42
+    },
+    "sink": {
+      "line": 5,
+      "column": 10,
+      "end_line": 5,
+      "end_column": 22
+    }
+  }
+]

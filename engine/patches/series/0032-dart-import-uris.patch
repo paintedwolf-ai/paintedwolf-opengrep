@@ -1,0 +1,66 @@
+diff --git a/languages/dart/generic/Parse_dart_tree_sitter.ml b/languages/dart/generic/Parse_dart_tree_sitter.ml
+--- a/languages/dart/generic/Parse_dart_tree_sitter.ml
++++ b/languages/dart/generic/Parse_dart_tree_sitter.ml
+@@ -2577,30 +2577,7 @@
+ 
+ and map_uri (env : env) (x : CST.uri) : G.module_name =
+   match map_string_literal_to_strings env x with
+-  | [ { e = G.L (String (_, (s, t), _)); _ } ] ->
+-      (* It's a pain, but we have to parse the string ourselves.
+-         It can look like
+-         dart:<path>
+-         package:<path>
+-         for instance, dart:foo/bar
+-
+-         It's a pain to separate these tokens by ourselves, so let's
+-         just give them all the location of the originating token.
+-      *)
+-      Common.(
+-        if s =~ "^\\(dart\\):\\(.*\\)$" then
+-          let prefix, s = Common.matched2 s in
+-          let dotted =
+-            List_.map (fun s -> (s, t)) (prefix :: String.split_on_char '/' s)
+-          in
+-          DottedName dotted
+-        else if s =~ "^\\(package\\):\\(.*\\)$" then
+-          let prefix, s = Common.matched2 s in
+-          let dotted =
+-            List_.map (fun s -> (s, t)) (prefix :: String.split_on_char '/' s)
+-          in
+-          DottedName dotted
+-        else DottedName [ (s, t) ])
++  | [ { e = G.L (String (_, name, _)); _ } ] -> FileName name
+   | other ->
+       (* We have to make it fit in `module_name` somehow, so just drop anything we
+          can't understand.
+diff --git a/src/naming/Naming_AST.ml b/src/naming/Naming_AST.ml
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -903,6 +903,13 @@
+       | ImportFrom (_, FileName (s, tok), imported_names) ->
+           List.iter
+             (function
++              | id, alias when lang =*= Lang.Dart ->
++                  let binding, id_info = Option.value
++                      ~default:(id, empty_id_info ()) alias in
++                  let resolved = untyped_ent
++                      (ImportedEntity [s; fst id], SId.mk ()) in
++                  set_resolved env id_info resolved;
++                  add_ident_imported_scope binding resolved env.names
+               | (name, _), Some (alias, id_info)
+                 when Lang.is_js lang && name = Ast_js.default_entity ->
+                   let sid = SId.mk () in
+@@ -947,9 +954,10 @@
+       | ImportAs (_, FileName (s, tok), Some (alias, id_info)) ->
+           (* for Go *)
+           let sid = SId.mk () in
+-          let pkgname = go_package_alias s in
+-          let base = (pkgname, tok) in
+-          let canonical = dotted_to_canonical [ base ] in
++          let canonical =
++            if lang =*= Lang.Dart then [s]
++            else dotted_to_canonical [ (go_package_alias s, tok) ]
++          in
+           let resolved = untyped_ent (ImportedModule canonical, sid) in
+           set_resolved env id_info resolved;
+           add_ident_imported_scope alias resolved env.names

@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "swift"
+      ],
+      "severity": "ERROR",
+      "message": "Subscript syntax",
+      "pattern": "values[\"key\"]"
+    }
+  ]
+}

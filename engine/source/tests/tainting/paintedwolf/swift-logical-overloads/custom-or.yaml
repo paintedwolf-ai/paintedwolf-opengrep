@@ -1,0 +1,23 @@
+{
+  "rules": [
+    {
+      "id": "flow",
+      "languages": [
+        "swift"
+      ],
+      "severity": "ERROR",
+      "message": "unsafe",
+      "mode": "taint",
+      "pattern-sources": [
+        {
+          "pattern": "source()"
+        }
+      ],
+      "pattern-sinks": [
+        {
+          "pattern": "sink($VALUE)"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "rules": [
+    {
+      "id": "origin",
+      "languages": [
+        "scheme"
+      ],
+      "message": "Modeled import identity",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "($TYPE ...)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "(guile)",
+            "symbol": [
+              "system"
+            ],
+            "imports": {
+              "implicit": [
+                "(guile)"
+              ]
+            }
+          }
+        },
+        {
+          "focus-metavariable": "$TYPE"
+        }
+      ]
+    }
+  ]
+}

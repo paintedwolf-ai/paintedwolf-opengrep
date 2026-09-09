@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "id": "request-origin",
+      "languages": [
+        "swift"
+      ],
+      "message": "Request import origin",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "func $H(..., $R: $TYPE, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "Vapor",
+            "symbol": [
+              "Request"
+            ]
+          }
+        },
+        {
+          "focus-metavariable": "$R"
+        }
+      ]
+    }
+  ]
+}

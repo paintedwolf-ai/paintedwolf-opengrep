@@ -1,0 +1,26 @@
+{
+  "rules": [
+    {
+      "id": "binding",
+      "languages": [
+        "python"
+      ],
+      "message": "Imported callable has lexical provenance",
+      "severity": "ERROR",
+      "patterns": [
+        {
+          "pattern": "$CALL(...)"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$CALL",
+            "module": "trusted",
+            "symbol": [
+              "source"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

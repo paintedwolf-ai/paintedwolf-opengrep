@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "upstream-php-parse",
+      "languages": [
+        "php"
+      ],
+      "severity": "ERROR",
+      "message": "Upstream PHP parsing regression",
+      "pattern": "__upstream_parse_sentinel__(...)"
+    }
+  ]
+}

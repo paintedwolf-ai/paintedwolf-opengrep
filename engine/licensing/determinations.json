@@ -1,0 +1,387 @@
+{
+ "_comment": [
+  "Conclusions that a licence file alone does not settle: a fork that dropped its",
+  "upstream licence, a package whose opam field disagrees with its own LICENSE, a",
+  "dual licence stated in a README, or a work that ships inside another component.",
+  "Every entry names the primary source it rests on. Nothing here is a guess; an",
+  "unresolved component stays `undetermined` and appears in GAPS.md."
+ ],
+ "components": {
+  "ocaml/menhir-20230608": {
+   "license": "GPL-2.0 (generator) AND LGPL-2.0 WITH OCaml-LGPL-linking-exception (lib/, sdk/)",
+   "spdx": "LGPL-2.0",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "menhir LICENSE splits the tree: THE GENERATOR is GPL-2.0, THE RUNTIME LIBRARY (lib/) and THE SDK are LGPL-2.0 with a linking exception",
+   "linkage": "build-only",
+   "linkage_basis": "the GPL-2.0 generator runs at build time; only menhirLib and menhirSdk link, and they are inventoried separately",
+   "note": "The GPL-2.0 half of this package never enters the executable. Do not read the opam `license: GPL-2.0-only` field as a licence on the shipped binary."
+  },
+  "ocaml/ocamlgraph-2.2.0": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE inside the pinned 2.2.0 tarball carries the linking exception; the opam `license:` field says plain LGPL-2.1-only and is wrong",
+   "note": "Worked example of why this inventory reads licence files rather than package metadata."
+  },
+  "ocaml/memprof-limits-dev": {
+   "license": "LGPL-3.0 WITH LGPL-3.0-linking-exception",
+   "spdx": "LGPL-3.0",
+   "exceptions": [
+    "LGPL-3.0-linking-exception"
+   ],
+   "basis": "LICENSE at the pinned fork revision",
+   "note": "The switch export pins this to commit c2cced325a93d2271379f0712db85867b29dbee1 on a personal GitLab fork. It is the only input in the switch with no checksum \u2014 opam records none for a git source \u2014 and the only one not published as a release archive, so its bytes have to travel with the product rather than be refetched."
+  },
+  "ocaml/ambient-context-0.2": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream ocaml-tracing/ambient-context; the release tarball omits its LICENSE"
+  },
+  "ocaml/ambient-context-lwt-0.2": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream ocaml-tracing/ambient-context; the release tarball omits its LICENSE"
+  },
+  "ocaml/timedesc-3.1.2": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream daypack-dev/timere; the release tarball omits its LICENSE"
+  },
+  "ocaml/timedesc-tzdb-3.1.2": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream daypack-dev/timere; the release tarball omits its LICENSE"
+  },
+  "ocaml/timedesc-tzlocal-3.1.2": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream daypack-dev/timere; the release tarball omits its LICENSE"
+  },
+  "native/gmp": {
+   "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+   "spdx": "LGPL-3.0",
+   "basis": "gmp-6.3.0 README states the dual grant; COPYING is GPL-3.0 and COPYING.LESSERv3 is LGPL-3.0",
+   "linkage": "static",
+   "linkage_basis": "built as a static archive by runtime.py and linked through zarith",
+   "note": "Taking the LGPL-3.0 branch is the only option that keeps the product proprietary, and LGPL-3.0 clause 4 then applies to the combined work."
+  },
+  "native/pcre": {
+   "license": "BSD-3-Clause",
+   "spdx": "BSD-3-Clause",
+   "basis": "LICENCE in the pinned pcre-8.45 tarball"
+  },
+  "native/pcre2": {
+   "license": "BSD-3-Clause WITH PCRE2-exception",
+   "spdx": "BSD-3-Clause",
+   "exceptions": [
+    "PCRE2-exception"
+   ],
+   "basis": "LICENCE.md in the pinned pcre2-10.48 tarball declares the SPDX id directly"
+  },
+  "native/libev": {
+   "license": "BSD-2-Clause OR GPL-2.0-or-later",
+   "spdx": "BSD-2-Clause",
+   "basis": "LICENSE in the pinned libev-4.33 tarball offers both"
+  },
+  "native/zstd": {
+   "license": "BSD-3-Clause OR GPL-2.0",
+   "spdx": "BSD-3-Clause",
+   "basis": "LICENSE (BSD) and COPYING (GPL-2.0) in the pinned zstd-1.5.7 tarball offer both"
+  },
+  "parsers/languages_crystal_tree-sitter_opengrep-crystal": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream crystal-lang-tools/tree-sitter-crystal, vendored at fyi/semgrep-grammars/src/tree-sitter-crystal",
+   "note": "The pinned fork carries no licence file of its own. Attribution has to be taken from upstream."
+  },
+  "parsers/languages_ql_tree-sitter_semgrep-ql": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream tree-sitter/tree-sitter-ql, vendored at fyi/semgrep-grammars/src/tree-sitter-ql",
+   "note": "The pinned fork carries no licence file of its own."
+  },
+  "parsers/languages_r_tree-sitter_semgrep-r": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream r-lib/tree-sitter-r, vendored at fyi/semgrep-grammars/src/tree-sitter-r",
+   "note": "The pinned fork carries no licence file of its own."
+  },
+  "parsers/tests_semgrep-rules": {
+   "license": "LGPL-2.1 AND Commons-Clause",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "Commons-Clause"
+   ],
+   "basis": "LICENSE at the pinned revision of semgrep/semgrep-rules",
+   "linkage": "build-only",
+   "linkage_basis": "test corpus: `git submodule update --init --recursive` checks it out, no code reaches the executable, and source_archive.py excludes submodules under a test tree from the archive",
+   "note": "The Commons Clause withholds the right to sell software whose value derives substantially from it. Nothing of it is conveyed: it stays in the build checkout."
+  },
+  "parsers/cli_src_semgrep_semgrep_interfaces": {
+   "license": null,
+   "basis": "undetermined: opengrep/semgrep-interfaces carries no licence file at the pinned revision",
+   "note": "Its generated ATD types compile into the CLI and its files ship in the source archive."
+  },
+  "python/ordered-set": {
+   "license": "MIT",
+   "spdx": "MIT",
+   "basis": "upstream rspeer/ordered-set; the pinned wheel ships no licence file",
+   "note": "The pinned wheel ships no licence file; upstream rspeer/ordered-set states MIT."
+  },
+  "python/certifi": {
+   "license": "MPL-2.0",
+   "spdx": "MPL-2.0",
+   "basis": "LICENSE in the pinned wheel",
+   "note": "Weak copyleft. The certifi files themselves must be offered in source form."
+  },
+  "python/packaging": {
+   "license": "Apache-2.0 OR BSD-2-Clause",
+   "spdx": "Apache-2.0",
+   "basis": "LICENSE in the pinned wheel points at LICENSE.APACHE and LICENSE.BSD, both present"
+  },
+  "python-runtime/cpython": {
+   "license": "PSF-2.0",
+   "spdx": "PSF-2.0",
+   "basis": "LICENSE.txt inside Python.framework/Versions/3.13/lib/python3.13 of the pinned python-3.13.15-macos11.pkg",
+   "linkage": "bundled",
+   "linkage_basis": "runtime.py copies the whole framework payload and Nuitka links the interpreter into the executable",
+   "evidence": [
+    "texts/PSF-2.0.txt"
+   ]
+  },
+  "ocaml/ocaml-5.5.1": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE at the ocaml/ocaml 5.5.1 tag; the switch export carries no source url for compiler packages",
+   "evidence": [
+    "texts/OCaml-5.5.1-LICENSE.txt"
+   ],
+   "linkage": "static",
+   "linkage_basis": "the OCaml runtime and stdlib link into every native executable the switch builds"
+  },
+  "ocaml/ocaml-base-compiler-5.5.1": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE at the ocaml/ocaml 5.5.1 tag; the switch export carries no source url for compiler packages",
+   "evidence": [
+    "texts/OCaml-5.5.1-LICENSE.txt"
+   ],
+   "linkage": "static",
+   "linkage_basis": "the OCaml runtime and stdlib link into every native executable the switch builds",
+   "note": "The compiler itself runs at build time; its runtime and stdlib are what ship."
+  },
+  "ocaml/base-bigarray-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/base-bytes-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/base-domains-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/base-effects-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/base-nnp-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/base-threads-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/base-unix-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/seq-base": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/ocaml-options-vanilla-1": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/compiler-cloning-disabled": {
+   "license": null,
+   "basis": "virtual package; no distributed source",
+   "linkage": "virtual",
+   "linkage_basis": "no code",
+   "note": "Virtual opam package: it records a feature the OCaml runtime provides and distributes no code of its own."
+  },
+  "ocaml/conf-gmp-5": {
+   "license": null,
+   "basis": "probe package; no distributed source",
+   "linkage": "build-only",
+   "linkage_basis": "build-time probe",
+   "note": "opam `conf-` package: it probes for a system library at build time and distributes no code. The library it probes for is inventoried in its own right. Here: GMP 6.3.0."
+  },
+  "ocaml/conf-gmp-powm-sec-4": {
+   "license": null,
+   "basis": "probe package; no distributed source",
+   "linkage": "build-only",
+   "linkage_basis": "build-time probe",
+   "note": "opam `conf-` package: it probes for a system library at build time and distributes no code. The library it probes for is inventoried in its own right. Here: GMP 6.3.0."
+  },
+  "ocaml/conf-libev-4-13": {
+   "license": null,
+   "basis": "probe package; no distributed source",
+   "linkage": "build-only",
+   "linkage_basis": "build-time probe",
+   "note": "opam `conf-` package: it probes for a system library at build time and distributes no code. The library it probes for is inventoried in its own right. Here: libev 4.33."
+  },
+  "ocaml/conf-pkg-config-5": {
+   "license": null,
+   "basis": "probe package; no distributed source",
+   "linkage": "build-only",
+   "linkage_basis": "build-time probe",
+   "note": "opam `conf-` package: it probes for a system library at build time and distributes no code. The library it probes for is inventoried in its own right. Here: pkg-config."
+  },
+  "ocaml/menhirLib-20230608": {
+   "license": "LGPL-2.0 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.0",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "menhir LICENSE covers lib/ and sdk/ under LGPL-2.0 with a linking exception; its LGPL-3.0 clause applies to coq-menhirlib/, which this package does not contain",
+   "linkage": "static"
+  },
+  "ocaml/menhirSdk-20230608": {
+   "license": "LGPL-2.0 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.0",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "menhir LICENSE covers lib/ and sdk/ under LGPL-2.0 with a linking exception; its LGPL-3.0 clause applies to coq-menhirlib/, which this package does not contain",
+   "linkage": "static"
+  },
+  "ocaml/num-1.6": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE in the pinned tarball; the MIT text beside it covers the bundled test scaffolding, not the library",
+   "linkage": "static"
+  },
+  "ocaml/calendar-3.0.0": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE in the pinned tarball carries the exception; the COPYING beside it is the bare LGPL-2.1 text the exception modifies",
+   "linkage": "static"
+  },
+  "ocaml/js_of_ocaml-6.4.1": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE in the pinned tarball",
+   "linkage": "static",
+   "note": "In the closure through alcotest-js and integers_stubs_js, which semgrep.opam declares without a test filter. A native macOS build almost certainly does not link it; verify-artifact settles that against a real artefact."
+  },
+  "ocaml/js_of_ocaml-compiler-6.4.1": {
+   "license": "LGPL-2.1 WITH OCaml-LGPL-linking-exception",
+   "spdx": "LGPL-2.1",
+   "exceptions": [
+    "OCaml-LGPL-linking-exception"
+   ],
+   "basis": "LICENSE in the pinned tarball",
+   "linkage": "static",
+   "note": "In the closure through alcotest-js and integers_stubs_js, which semgrep.opam declares without a test filter. A native macOS build almost certainly does not link it; verify-artifact settles that against a real artefact."
+  }
+ },
+ "extra_components": {
+  "python-runtime/openssl": {
+   "license": "Apache-2.0",
+   "spdx": "Apache-2.0",
+   "linkage": "bundled",
+   "basis": "libssl.3.dylib and libcrypto.3.dylib inside the pinned Python framework identify themselves as OpenSSL 3.0.21",
+   "provenance": {
+    "version": "3.0.21",
+    "url": "https://github.com/openssl/openssl",
+    "within": "python-3.13.15-macos11.pkg / Python.framework/Versions/3.13/lib"
+   },
+   "note": "Reaches the executable whenever Nuitka follows the ssl import, which requests and urllib3 force."
+  },
+  "python-runtime/ncurses": {
+   "license": "ncurses-X11",
+   "spdx": "ncurses-X11",
+   "linkage": "bundled",
+   "basis": "libncurses.6.dylib inside the pinned Python framework reports ncurses 6.5.20240427",
+   "provenance": {
+    "version": "6.5.20240427",
+    "url": "https://invisible-island.net/ncurses/",
+    "within": "python-3.13.15-macos11.pkg / Python.framework/Versions/3.13/lib"
+   }
+  },
+  "python-runtime/sqlite": {
+   "license": "SQLite-public-domain",
+   "spdx": "SQLite-public-domain",
+   "linkage": "bundled",
+   "basis": "_sqlite3.cpython-313-darwin.so in the pinned framework links no external SQLite and reports 3.50.4",
+   "provenance": {
+    "version": "3.50.4",
+    "url": "https://sqlite.org/",
+    "within": "python-3.13.15-macos11.pkg / Python.framework"
+   },
+   "note": "peewee pulls sqlite3 into the import graph."
+  },
+  "python-runtime/tcl-tk": {
+   "license": "TCL",
+   "spdx": "TCL",
+   "linkage": "bundled",
+   "basis": "Tcl.framework and Tk.framework 8.6.18 inside the pinned Python framework",
+   "provenance": {
+    "version": "8.6.18",
+    "url": "https://www.tcl.tk/",
+    "within": "python-3.13.15-macos11.pkg / Python.framework/Versions/3.13/Frameworks"
+   },
+   "note": "Present in the framework that runtime.py copies. Whether it survives into the executable depends on the import graph; verify-artifact settles it."
+  }
+ }
+}

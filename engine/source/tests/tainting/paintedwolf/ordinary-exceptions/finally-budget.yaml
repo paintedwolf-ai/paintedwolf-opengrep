@@ -1,0 +1,15 @@
+rules:
+- id: flow
+  languages: [python]
+  severity: ERROR
+  message: Preserve possible taint through bounded finalizer expansion
+  mode: taint
+  options:
+    taint_intrafile: true
+  pattern-sources:
+  - pattern: source_value
+    exact: true
+  pattern-sinks:
+  - patterns:
+    - pattern: sink($VALUE)
+    - focus-metavariable: $VALUE

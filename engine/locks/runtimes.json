@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "macos": {
+    "deployment_target": "13.0",
+    "native_libraries": [
+      {
+        "name": "pcre",
+        "version": "8.45",
+        "url": "https://downloads.sourceforge.net/project/pcre/pcre/8.45/pcre-8.45.tar.bz2",
+        "sha256": "4dae6fdcd2bb0bb6c37b5f97c33c2be954da743985369cddac3546e3218bffb8",
+        "configure": [
+          "--disable-shared",
+          "--enable-static",
+          "--enable-utf",
+          "--enable-unicode-properties",
+          "--enable-jit"
+        ]
+      },
+      {
+        "name": "pcre2",
+        "version": "10.48",
+        "url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.48/pcre2-10.48.tar.bz2",
+        "sha256": "b6c68fdf6f3ac31388b50aa89ff0fc49c00c987c16e7b5146491d12003f2c8ed",
+        "configure": [
+          "--disable-shared",
+          "--enable-static",
+          "--enable-jit"
+        ]
+      },
+      {
+        "name": "gmp",
+        "version": "6.3.0",
+        "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+        "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
+        "configure": [
+          "--disable-shared",
+          "--enable-static",
+          "--enable-cxx"
+        ]
+      },
+      {
+        "name": "libev",
+        "version": "4.33",
+        "url": "https://dist.schmorp.de/libev/Attic/libev-4.33.tar.gz",
+        "sha256": "507eb7b8d1015fbec5b935f34ebed15bf346bed04a11ab82b8eee848c4205aea",
+        "configure": [
+          "--disable-shared",
+          "--enable-static"
+        ]
+      },
+      {
+        "name": "zstd",
+        "version": "1.5.7",
+        "url": "https://github.com/facebook/zstd/archive/refs/tags/v1.5.7.tar.gz",
+        "sha256": "37d7284556b20954e56e1ca85b80226768902e2edabd3b649e9e72c0c9012ee3"
+      }
+    ],
+    "python": {
+      "version": "3.13.15",
+      "series": "3.13",
+      "url": "https://www.python.org/ftp/python/3.13.15/python-3.13.15-macos11.pkg",
+      "sha256": "3b7eaf7f29825f796e8267024435540ddf1f17fc9a97ad58095daa7a75bfdcd3"
+    }
+  },
+  "tree_sitter": {
+    "version": "0.22.6",
+    "url": "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.22.6.tar.gz",
+    "sha256": "e2b687f74358ab6404730b7fb1a1ced7ddb3780202d37595ecd7b20a8f41861f"
+  }
+}

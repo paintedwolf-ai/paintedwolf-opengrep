@@ -1,0 +1,70 @@
+diff --git a/grammar.js b/grammar.js
+--- a/grammar.js
++++ b/grammar.js
+@@ -460,7 +460,6 @@
+     expression_statement: $ => choice(
+       $._expr,
+       $._postfix_expressions,
+-      $.yadayada,
+     ),
+     _postfix_expressions: $ => choice(
+       $.postfix_conditional_expression,
+@@ -581,6 +580,7 @@
+     ),
+ 
+     _term: $ => choice(
++      $.yadayada,
+       $.readline_expression,
+       $.fileglob_expression,
+       $.assignment_expression,
+@@ -1556,7 +1556,8 @@
+       seq(optional($._fat_comma_autoquoted_ahead), optional('-'), $._fat_comma_autoquoted)
+     ),
+     // NOTE - these have zw lookaheads so they override just being read as barewords
+-    _brace_autoquoted: $ => alias($._brace_autoquoted_token, $.autoquoted_bareword),
++    // A subscript autoquote wins over a bareword hashref in an indirect call.
++    _brace_autoquoted: $ => prec.dynamic(2, alias($._brace_autoquoted_token, $.autoquoted_bareword)),
+ 
+     // prefer identifer to bareword where the grammar allows
+     identifier: $ => prec(2, $._identifier),
+diff --git a/test/corpus/variables b/test/corpus/variables
+--- a/test/corpus/variables
++++ b/test/corpus/variables
+@@ -358,6 +358,7 @@
+ 
+ ================================================================================
+ Double dollar edge cases
++:error
+ ================================================================================
+ $$;
+ # symbols are invalid names
+@@ -366,18 +367,6 @@
+ $[;
+ --------------------------------------------------------------------------------
+ 
+-(source_file
+-  (expression_statement
+-    (scalar
+-      (varname)))
+-  (comment)
+-  (expression_statement
+-    (scalar
+-      (varname)))
+-  (ERROR)
+-  (ERROR
+-    (container_variable
+-      (varname))))
+ 
+ ================================================================================
+ crazy vars
+@@ -531,3 +520,10 @@
+         left: (scalar
+           (varname))
+         right: (number)))))
++
++================================================================================
++Process identifier variable
++================================================================================
++$$;
++--------------------------------------------------------------------------------
++(source_file (expression_statement (scalar (varname))))

@@ -1,0 +1,365 @@
+diff --git a/src/core_scan/Core_scan.ml b/src/core_scan/Core_scan.ml
+index f3b0464..7c1a07e 100644
+--- a/src/core_scan/Core_scan.ml
++++ b/src/core_scan/Core_scan.ml
+@@ -313,15 +313,15 @@ let targets_of_config (config : Core_scan_config.t) :
+ (*****************************************************************************)
+ 
+ let parse_and_resolve_name (lang : Lang.t) (fpath : Fpath.t) :
+-    AST_generic.program * Tok.location list =
+-  let { Parsing_result2.ast; skipped_tokens; _ } =
++    AST_generic.program * Parsing_diagnostic.t list =
++  let ({ Parsing_result2.ast; _ } as parsed) =
+     Logs_.with_debug_trace ~__FUNCTION__ (fun () ->
+         Logs.debug (fun m ->
+             m "Parsing (and naming) %s (with lang %s)" !!fpath
+               (Lang.to_string lang));
+         Parse_target.parse_and_resolve_name lang fpath)
+   in
+-  (ast, skipped_tokens)
++  (ast, Parsing_result2.diagnostics parsed)
+ 
+ (* The set of all lang analyzers present in targets; used in rules_from_config
+  * for filtering.
+diff --git a/src/core_scan/Core_scan.mli b/src/core_scan/Core_scan.mli
+index db0b6de..59b937b 100644
+--- a/src/core_scan/Core_scan.mli
++++ b/src/core_scan/Core_scan.mli
+@@ -98,7 +98,7 @@ val parse_equivalences : Fpath.t option -> Equivalence.equivalences
+ 
+ (* small wrapper around Parse_target.parse_and_resolve_name *)
+ val parse_and_resolve_name :
+-  Lang.t -> Fpath.t -> AST_generic.program * Tok.location list
++  Lang.t -> Fpath.t -> AST_generic.program * Parsing_diagnostic.t list
+ 
+ val log_scan_inputs :
+   Core_scan_config.t ->
+diff --git a/src/engine/Match_search_mode.ml b/src/engine/Match_search_mode.ml
+index fa94ef1..8acc666 100644
+--- a/src/engine/Match_search_mode.ml
++++ b/src/engine/Match_search_mode.ml
+@@ -291,7 +291,7 @@ let matches_of_patterns ~has_as_metavariable ?mvar_context ?range_filter rule
+                 config mini_rules
+                 (internal_path_to_content, origin, lang, ast))
+       in
+-      let errors = Parse_target.errors_from_skipped_tokens skipped_tokens in
++      let errors = Parse_target.errors_from_diagnostics skipped_tokens in
+       RP.mk_match_result matches errors
+         { Core_profiling.parse_time; match_time }
+   | _ -> Core_result.empty_match_result
+diff --git a/src/engine/Match_taint_spec.mli b/src/engine/Match_taint_spec.mli
+index 587b387..44b1c0a 100644
+--- a/src/engine/Match_taint_spec.mli
++++ b/src/engine/Match_taint_spec.mli
+@@ -41,7 +41,7 @@ val taint_config_of_rule :
+   Match_env.xconfig ->
+   Lang.t ->
+   Fpath.t ->
+-  AST_generic.program * Tok.location list ->
++  AST_generic.program * Parsing_diagnostic.t list ->
+   Rule.taint_rule ->
+   (Taint_rule_inst.t * spec_matches * Matching_explanation.t list) option
+ 
+diff --git a/src/engine/Match_tainting_mode.ml b/src/engine/Match_tainting_mode.ml
+index 7a749ac..e726ca7 100644
+--- a/src/engine/Match_tainting_mode.ml
++++ b/src/engine/Match_tainting_mode.ml
+@@ -833,7 +833,7 @@ let check_rule per_file_formula_cache (rule : R.taint_rule) match_hook
+           |> match_hook
+         in
+ 
+-        let errors = Parse_target.errors_from_skipped_tokens skipped_tokens in
++        let errors = Parse_target.errors_from_diagnostics skipped_tokens in
+         let report =
+           RP.mk_match_result matches errors
+             {
+@@ -1015,8 +1015,15 @@ let check_rules ~match_hook
+     @ Taint_callback_models.take_diagnostics ()
+     @ Taint_model_types.take_diagnostics ()
+   in
++  let _, frontend_diagnostics = lazy_force xtarget.Xtarget.lazy_ast_and_errors in
++  let already_reported location =
++    List.exists (function
++      | Parsing_diagnostic.Unsupported_semantics (_, loc) ->
++          Option.fold ~none:false ~some:(Tok.equal_location loc) location
++      | Syntax _ -> false) frontend_diagnostics in
+   let semantic_errors =
+     semantic_gaps
++    |> List.filter (fun (_, location) -> not (already_reported location))
+     |> List.map (fun (construct, loc) ->
+            Core_error.mk_error ?loc
+              ~target_path:xtarget.path.internal_path_to_content
+diff --git a/src/engine/Metavariable_pattern.ml b/src/engine/Metavariable_pattern.ml
+index 06e99ba..f5ff194 100644
+--- a/src/engine/Metavariable_pattern.ml
++++ b/src/engine/Metavariable_pattern.ml
+@@ -268,7 +268,7 @@ let get_nested_metavar_pattern_bindings get_nested_formula_matches env r mvar
+                         match xlang with
+                         | L (lang, _) -> (
+                             try
+-                              let { Parsing_result2.ast; skipped_tokens; _ } =
++                              let ({ Parsing_result2.ast; _ } as parsed) =
+                                 Parse_target.parse_and_resolve_name lang file
+                               in
+                               (* Reposition the errors to the original source
+@@ -276,8 +276,8 @@ let get_nested_metavar_pattern_bindings get_nested_formula_matches env r mvar
+                                * user as being from the temp file that we
+                                * created. *)
+                               let skipped_tokens =
+-                                skipped_tokens
+-                                |> List_.map (fun tok -> revert_loc tok)
++                                Parsing_result2.diagnostics parsed
++                                |> List_.map (Parsing_diagnostic.map_location revert_loc)
+                               in
+                               if skipped_tokens <> [] then
+                                 Log.warn (fun m ->
+diff --git a/src/engine/tests/Test_engine.ml b/src/engine/tests/Test_engine.ml
+index 969e71f..f16784f 100644
+--- a/src/engine/tests/Test_engine.ml
++++ b/src/engine/tests/Test_engine.ml
+@@ -79,10 +79,10 @@ let xtarget_of_file (xlang : Xlang.t) (target : Fpath.t) : Xtarget.t =
+         xlang
+   in
+   let parser xlang file =
+-    let { ast; skipped_tokens; _ } : Parsing_result2.t =
++    let ({ ast; _ } as parsed) : Parsing_result2.t =
+       Parse_target.parse_and_resolve_name xlang file
+     in
+-    (ast, skipped_tokens)
++    (ast, Parsing_result2.diagnostics parsed)
+   in
+   Xtarget.resolve parser (Target.mk_regular xlang Product.all (File target))
+ 
+diff --git a/src/osemgrep/cli_show/Show_subcommand.ml b/src/osemgrep/cli_show/Show_subcommand.ml
+index c492fcf..477bacd 100644
+--- a/src/osemgrep/cli_show/Show_subcommand.ml
++++ b/src/osemgrep/cli_show/Show_subcommand.ml
+@@ -103,6 +103,7 @@ let run_conf (caps : < caps ; .. >) (conf : Show_CLI.conf) : Exit_code.t =
+       let Parsing_result2.
+             {
+               ast;
++              semantic_gaps;
+               errors;
+               tolerated_errors;
+               skipped_tokens;
+@@ -122,6 +123,9 @@ let run_conf (caps : < caps ; .. >) (conf : Show_CLI.conf) : Exit_code.t =
+       UFormat.set_margin 120;
+       let s = dump_any_to_format ~json:conf.json ~html:conf.html (AST_generic.Pr ast) in
+       print s;
++      List.iter (fun (construct, location) ->
++        Logs.warn (fun m -> m "Unsupported %s semantics at %s" construct
++          (Tok.show_location location))) semantic_gaps;
+       match (errors @ tolerated_errors, skipped_tokens @ inserted_tokens) with
+       | [], [] -> Exit_code.ok ~__LOC__
+       | _, _ ->
+@@ -295,10 +299,10 @@ let run_conf (caps : < caps ; .. >) (conf : Show_CLI.conf) : Exit_code.t =
+             let tbl = Formula_cache.mk_specialized_formula_cache [] in
+             let xlang = Xlang.L (lang, []) in
+             let parser xlang file =
+-              let { Parsing_result2.ast; skipped_tokens; _ } =
++              let ({ Parsing_result2.ast; _ } as parsed) =
+                 Parse_target.parse_and_resolve_name xlang file
+               in
+-              (ast, skipped_tokens)
++              (ast, Parsing_result2.diagnostics parsed)
+             in
+             let xtarget =
+               Xtarget.resolve parser (Target.mk_regular xlang Product.all (File target_file))
+diff --git a/src/osemgrep/language_server/scan_helpers/Scan_helpers.ml b/src/osemgrep/language_server/scan_helpers/Scan_helpers.ml
+index 611f0cb..eb95599 100644
+--- a/src/osemgrep/language_server/scan_helpers/Scan_helpers.ml
++++ b/src/osemgrep/language_server/scan_helpers/Scan_helpers.ml
+@@ -28,11 +28,11 @@ module Out = Semgrep_output_v1_t
+ (*****************************************************************************)
+ 
+ let parse_and_resolve_name (lang : Lang.t) (fpath : Fpath.t) :
+-    AST_generic.program * Tok.location list =
+-  let { Parsing_result2.ast; skipped_tokens; _ } =
++    AST_generic.program * Parsing_diagnostic.t list =
++  let ({ Parsing_result2.ast; _ } as parsed) =
+     Parse_target.parse_and_resolve_name lang fpath
+   in
+-  (ast, skipped_tokens)
++  (ast, Parsing_result2.diagnostics parsed)
+ 
+ (*****************************************************************************)
+ (* Semgrep helpers *)
+diff --git a/src/parsing/Parse_target.ml b/src/parsing/Parse_target.ml
+index 2fcf1da..eb79c78 100644
+--- a/src/parsing/Parse_target.ml
++++ b/src/parsing/Parse_target.ml
+@@ -36,7 +36,7 @@ module Log = Log_parsing.Log
+ (*****************************************************************************)
+ 
+ (* used by Match_search_mode and Match_tainting_mode *)
+-let errors_from_skipped_tokens xs =
++let syntax_errors xs =
+   match xs with
+   | [] -> Core_error.ErrorSet.empty
+   | x :: _ ->
+@@ -47,6 +47,19 @@ let errors_from_skipped_tokens xs =
+       in
+       Core_error.ErrorSet.singleton { err with typ = OutJ.PartialParsing locs }
+ 
++let errors_from_diagnostics diagnostics =
++  let syntax = List.filter_map (function
++    | Parsing_diagnostic.Syntax location -> Some location
++    | Unsupported_semantics _ -> None) diagnostics in
++  let semantics = List.filter_map (function
++    | Parsing_diagnostic.Syntax _ -> None
++    | Unsupported_semantics (construct, loc) ->
++        Some (E.mk_error ~loc ~target_path:loc.Tok.pos.file
++          ~msg:"Unsupported language semantics; analysis is incomplete"
++          (OutJ.PartialSemantics construct))) diagnostics in
++  Core_error.ErrorSet.union (syntax_errors syntax)
++    (Core_error.ErrorSet.of_list semantics)
++
+ let undefined_just_parse_with_lang _lang _file =
+   failwith "just_parse_with_lang_ref unset"
+ 
+diff --git a/src/parsing/Parse_target.mli b/src/parsing/Parse_target.mli
+index 4c98532..b5f9640 100644
+--- a/src/parsing/Parse_target.mli
++++ b/src/parsing/Parse_target.mli
+@@ -36,5 +36,4 @@ val parse_and_resolve_name_strict : Lang.t -> Fpath.t -> AST_generic.program
+  *)
+ val just_parse_with_lang_ref : (Lang.t -> Fpath.t -> Parsing_result2.t) ref
+ 
+-(* returns a Output_from_core.PartialParsing error *)
+-val errors_from_skipped_tokens : Tok.location list -> Core_error.ErrorSet.t
++val errors_from_diagnostics : Parsing_diagnostic.t list -> Core_error.ErrorSet.t
+diff --git a/src/parsing/Parsing_result2.ml b/src/parsing/Parsing_result2.ml
+index 9008ba3..ffbfde6 100644
+--- a/src/parsing/Parsing_result2.ml
++++ b/src/parsing/Parsing_result2.ml
+@@ -9,6 +9,7 @@ type error = Tree_sitter_error of Err.t
+ 
+ type t = {
+   ast : AST_generic.program;
++  semantic_gaps : (string * Tok.location) list;
+   errors : error list;
+   skipped_tokens : Tok.location list;
+   inserted_tokens : Tok.location list;
+@@ -19,6 +20,7 @@ type t = {
+ let ok ast stat tolerated_errors =
+   {
+     ast;
++    semantic_gaps = [];
+     errors = [];
+     skipped_tokens = [];
+     inserted_tokens = [];
+@@ -53,7 +55,7 @@ let partial ast stat tree_sitter_errors =
+     locs_of_tree_sitter_errors tree_sitter_errors
+   in
+   let errors = List_.map (fun x -> Tree_sitter_error x) tree_sitter_errors in
+-  { ast; errors; skipped_tokens; inserted_tokens; tolerated_errors = []; stat }
++  { ast; semantic_gaps = []; errors; skipped_tokens; inserted_tokens; tolerated_errors = []; stat }
+ 
+ let has_error x = x.errors <> []
+ 
+@@ -67,3 +69,8 @@ let format_error ?style = function
+ 
+ let format_errors ?style errors =
+   errors |> List_.map (format_error ?style) |> String.concat ""
++
++let diagnostics result =
++  List.map (fun location -> Parsing_diagnostic.Syntax location) result.skipped_tokens
++  @ List.map (fun (construct, location) ->
++      Parsing_diagnostic.Unsupported_semantics (construct, location)) result.semantic_gaps
+diff --git a/src/parsing/Parsing_result2.mli b/src/parsing/Parsing_result2.mli
+index 03dc749..e2eedd1 100644
+--- a/src/parsing/Parsing_result2.mli
++++ b/src/parsing/Parsing_result2.mli
+@@ -17,6 +17,7 @@ type error = Tree_sitter_error of Tree_sitter_run.Tree_sitter_error.t
+  *)
+ type t = {
+   ast : AST_generic.program;
++  semantic_gaps : (string * Tok.location) list;
+   (* Partial-parsing errors tree-sitter was able to recover from: *)
+   errors : error list;
+   (* Tokens that were ignored by the tree-sitter parser, corresponding to
+@@ -59,3 +60,5 @@ val has_error : t -> bool
+ 
+ (* Convert errors into a human-readable format. *)
+ val format_errors : ?style:Tree_sitter_run.Snippet.style -> error list -> string
++
++val diagnostics : t -> Parsing_diagnostic.t list
+diff --git a/src/parsing_languages/Parse_target2.ml b/src/parsing_languages/Parse_target2.ml
+index c490d81..47e2e0a 100644
+--- a/src/parsing_languages/Parse_target2.ml
++++ b/src/parsing_languages/Parse_target2.ml
+@@ -54,6 +54,7 @@ let just_parse_with_lang lang file : Parsing_result2.t =
+         ast = Yaml_to_generic.program file;
+         errors = [];
+         skipped_tokens = [];
++        semantic_gaps = [];
+         inserted_tokens = [];
+         tolerated_errors = [];
+         stat = Parsing_stat.default_stat !!file;
+@@ -168,11 +169,17 @@ let just_parse_with_lang lang file : Parsing_result2.t =
+    * a generic AST (no calls to an xxx_to_generic() below)
+    *)
+   | Lang.Groovy ->
+-      run file [ TreeSitter Parse_groovy_native.parse ] (fun x -> x)
++      let parsed, semantic_gaps = Parse_groovy_native.parse file in
++      let result = run file [ TreeSitter (fun _ -> parsed) ] (fun x -> x) in
++      {result with semantic_gaps}
+   | Lang.Perl ->
+-      run file [ TreeSitter Parse_perl_native.parse ] (fun x -> x)
++      let parsed, semantic_gaps = Parse_perl_native.parse file in
++      let result = run file [ TreeSitter (fun _ -> parsed) ] (fun x -> x) in
++      {result with semantic_gaps}
+   | Lang.Powershell ->
+-      run file [ TreeSitter Parse_powershell_native.parse ] (fun x -> x)
++      let parsed, semantic_gaps = Parse_powershell_native.parse file in
++      let result = run file [ TreeSitter (fun _ -> parsed) ] (fun x -> x) in
++      {result with semantic_gaps}
+   | Lang.Cairo ->
+       run file [ TreeSitter Parse_cairo_tree_sitter.parse ] (fun x -> x)
+   | Lang.Crystal ->
+@@ -241,6 +248,7 @@ let just_parse_with_lang lang file : Parsing_result2.t =
+             ast = ast;
+             errors = errs;
+             skipped_tokens = [];
++        semantic_gaps = [];
+             inserted_tokens = [];
+             tolerated_errors = [];
+             stat = stat
+diff --git a/src/target/Xtarget.ml b/src/target/Xtarget.ml
+index 0197a00..d1afcd5 100644
+--- a/src/target/Xtarget.ml
++++ b/src/target/Xtarget.ml
+@@ -19,7 +19,7 @@ type t = {
+   path : Target.path;
+   xlang : Xlang.t;
+   lazy_content : string lazy_t; (* TODO: Check concurrent usage; also below. *)
+-  lazy_ast_and_errors : (AST_generic.program * Tok.location list) lazy_t;
++  lazy_ast_and_errors : (AST_generic.program * Parsing_diagnostic.t list) lazy_t;
+ }
+ 
+ let parse_file parser (analyzer : Xlang.t) path =
+diff --git a/src/target/Xtarget.mli b/src/target/Xtarget.mli
+index a369919..d086b63 100644
+--- a/src/target/Xtarget.mli
++++ b/src/target/Xtarget.mli
+@@ -8,12 +8,12 @@ type t = {
+   path : Target.path;
+   xlang : Xlang.t;  (** The analyzer to use when scanning this target. *)
+   lazy_content : string lazy_t;
+-  lazy_ast_and_errors : (AST_generic.program * Tok.location list) lazy_t;
++  lazy_ast_and_errors : (AST_generic.program * Parsing_diagnostic.t list) lazy_t;
+       (** This is valid only for xlang = Xlang.L ..., not for LRegex|LGeneric *)
+ }
+ 
+ val resolve :
+-  (Language.t -> Fpath.t -> AST_generic.program * Tok.location list) ->
++  (Language.t -> Fpath.t -> AST_generic.program * Parsing_diagnostic.t list) ->
+   Target.regular ->
+   t
+ (** [resolve parser target] is the extended version of [target], comprising
+@@ -23,4 +23,4 @@ val resolve :
+  * easy construction of Xtargets in contexts where the client has already parsed
+  * the file in question. *)
+ val resolve_with_ast :
+-  (AST_generic.program * Tok.location list) Lazy.t -> Target.regular -> t
++  (AST_generic.program * Parsing_diagnostic.t list) Lazy.t -> Target.regular -> t

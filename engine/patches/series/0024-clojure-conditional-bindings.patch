@@ -1,0 +1,292 @@
+--- a/languages/lisp/tree-sitter/Macro_expand_clojure.ml
++++ b/languages/lisp/tree-sitter/Macro_expand_clojure.ml
+@@ -23,8 +23,7 @@
+ let is_macroexpandable (todo_kind : string) =
+   match todo_kind with
+   | "as->" | "ShortLambda"
+-  | "When" | "WhenNot" | "WhenLet" | "WhenSome" | "WhenFirst"
+-  | "IfLet" | "IfNot" | "IfSome"
++  | "When" | "WhenNot" | "IfNot"
+     -> true
+   | _
+     -> false
+@@ -44,128 +43,23 @@
+       }
+     |> G.e
+ 
+-  | G.OtherExpr ((("When" | "WhenNot"), when_tok),
+-                 (G.E expr_test) :: expr_body) ->
+-    let do_exprs = match expr_body with
+-      | [] -> [G.E (L (Null (G.fake "nil")) |> G.e)]
+-      | _ -> expr_body
++  | G.OtherExpr ((("When" | "WhenNot" as kind), tok),
++                 G.E test :: body) ->
++    let nil = G.L (G.Null tok) |> G.e in
++    let body = match body with
++      | [] -> nil
++      | expressions -> G.OtherExpr (("ExprBlock", tok), expressions) |> G.e
+     in
+-    let when_body = 
+-      G.OtherExpr (("ExprBlock", when_tok), do_exprs)
+-      |> G.e |> G.exprstmt
++    let test = if kind = "WhenNot" then G.opcall (G.Not, tok) [test] else test in
++    G.Conditional (test, body, nil) |> G.e
++
++  | G.OtherExpr (("IfNot", tok), G.E test :: G.E then_ :: else_opt) ->
++    let else_ = match else_opt with
++      | [] -> G.L (G.Null tok) |> G.e
++      | [G.E value] -> value
++      | _ -> raise (Macroexpansion_error ("Invalid if-not else body", G.E expr))
+     in
+-    (* TODO: Is it worth to encode the not nil test?
+-     * TODO: For WhenNot we need an extra NOT( ... ). 
+-     * Note that an ExprBlock with expr_test :: do_exprs is enough!
+-     * The exprs will be translated in order. So I'll leave this as
+-     * is now because it's very easy to improve with the right
+-     * condition. *)
+-    G.If (when_tok, (G.Cond expr_test), when_body, None)
+-    |> G.s |> G.stmt_to_expr
+-
+-  | G.OtherExpr ((("IfNot"), if_not_tok),
+-                 G.E expr_test :: G.E then_ :: else_opt) ->
+-    let else_stmt_opt = match else_opt with
+-      | [] -> None
+-      | [ G.E else_ ] -> Some (else_ |> G.exprstmt)
+-      | _ -> raise @@
+-        Macroexpansion_error ("Invalid if-not else body", G.E expr)
+-    in
+-    let not_expr_test =
+-      let open G in
+-      Call (IdSpecial (Op NotEq, if_not_tok) |> G.e,
+-            Tok.unsafe_fake_bracket
+-              [ Arg expr_test;
+-                (* TODO: falsy is nil, false; we only check nil here. *)
+-                Arg (G.L (G.Null if_not_tok) |> G.e) ]) |> G.e
+-    in
+-    G.If (if_not_tok, (G.Cond not_expr_test), then_ |> G.exprstmt, else_stmt_opt)
+-    |> G.s |> G.stmt_to_expr
+-
+-  (* TODO: At some point do proper translation:
+-   * - when-let: when not nil or false;
+-   * - when-some: when not nil;
+-   * - when-first: falsy = empty/nil sequence (and binds to first element).
+-   *   At least we should not bind any name after the first in the PatList.
+-   *   But this is not enough. *)
+-  (*
+-   * (defmacro when-let
+-   *   "bindings => binding-form test
+-   * 
+-   *   When test is true, evaluates body with binding-form bound to the value of test"
+-   *   {:added "1.0"}
+-   *   [bindings & body]
+-   *   (assert-args
+-   *      (vector? bindings) "a vector for its binding"
+-   *      (= 2 (count bindings)) "exactly 2 forms in binding vector")
+-   *    (let [form (bindings 0) tst (bindings 1)]
+-   *     `(let [temp# ~tst]
+-   *        (when temp#
+-   *          (let [~form temp#]
+-   *            ~@body))))) 
+-   *  *)
+-  | G.OtherExpr ((("WhenLet" | "WhenSome" | "WhenFirst"), when_let_tok),
+-                 G.E { e = G.OtherExpr
+-                           ((("WhenLetPatternBindings"
+-                             | "WhenSomePatternBindings"
+-                             | "WhenFirstPatternBindings"), _when_let_tok),
+-                            bindings); _}
+-                 :: expr_body) ->
+-    let do_exprs = match expr_body with
+-      | [] -> [G.E (L (Null (G.fake "nil")) |> G.e)]
+-      | _ -> expr_body
+-    in
+-    (* TODO: Again, we could do a proper test to see if the binding
+-     * is nil. For now this becomes a 'let'. *)
+-    G.OtherExpr (("ExprBlock", when_let_tok),
+-                 bindings @ do_exprs)
+-    |> G.e
+-
+-  (*
+-   * if-let: 
+-   * (let [form (bindings 0) tst (bindings 1)]
+-   *   `(let [temp# ~tst]
+-   *      (if temp#
+-   *        (let [~form temp#]
+-   *          ~then)
+-   *        ~else)))))
+-   * if-some:
+-   * as above but with 'if not nil? temp#'
+-   *) 
+-  | G.OtherExpr
+-      ((( "IfLet" | "IfSome" ), if_let_tok),
+-       G.E { e = G.OtherExpr
+-                 (("ExprBlock", _if_let_tok),
+-                  G.E {e =
+-                         G.OtherExpr
+-                           ((( "IfLetPatternBindings" | "IfSomePatternBindings"),
+-                             _if_let_tok'),
+-                            [ G.E G.{e = G.LetPattern (pat_binding, test_expr); _} ] 
+-                           ); _}
+-                  :: [ G.E then_ ]); _}
+-       :: else_opt) ->
+-    (* We convert to a switch on test_expr: nil -> else | pat -> then.
+-     * Note that we must have bindings if we are macroexpanding, no ellipsis
+-     * should reach this point!
+-     * TODO: Explicit 'truthy' (null for if-some) test, could be better with
+-     * constant propagation since some cases where the value is known to be nil
+-     * would be detected; but for now I see marginal value in that. *)
+-    let if_case = G.case_of_pat_and_expr (pat_binding, then_) in
+-    let cases =
+-      begin match else_opt with
+-        | [] -> [if_case]
+-        | [ G.E else_ ] ->
+-          G.case_of_pat_and_expr
+-            (G.PatLiteral (G.Null (G.fake "nil")), else_) :: if_case :: []
+-        | _ -> raise @@ 
+-          Macroexpansion_error ("Invalid if-let else body", G.E expr)
+-      end
+-    in
+-    G.Switch
+-      (if_let_tok,
+-       Some (G.Cond test_expr),
+-       cases)
+-    |> G.s |> G.stmt_to_expr
++    G.Conditional (G.opcall (G.Not, tok) [test], then_, else_) |> G.e
+ 
+   (*
+    * (defmacro as->
+--- a/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
++++ b/languages/lisp/tree-sitter/Parse_clojure_tree_sitter.ml
+@@ -611,8 +611,10 @@
+   (* TODO:
+    * - if not env says quoted;
+    * - if not under defmacro. *)
+-  if not (env.extra.dialect =*= Clojure) then map_lisp_form env forms else
+-  match discriminant with
++  if not (env.extra.dialect =*= Clojure) then map_lisp_form env forms
++  else if List.length forms =|= 0 then
++    G.Container (G.List, (token env lp, [], token env rp)) |> G.e
++  else match discriminant with
+     (* TODO: Check if in Quoted state! In that case just symbols list. *)
+     | Some ("def" | "defonce") -> map_def_form env forms
+     | Some "fn" -> map_fn_form env forms
+--- a/src/analyzing/AST_to_IL.ml
++++ b/src/analyzing/AST_to_IL.ml
+@@ -1332,6 +1332,36 @@
+   let update = mk_s (Instr (mk_i (Assign (target, rhs_value)) eorig)) in
+   let branch = mk_s (If (tok, condition, ss_rhs @ [update], [])) in
+   (ss_lhs @ [branch], mk_e (Fetch target) eorig)
++
++and clojure_conditional_binding env g_expr kind tok pat test body otherwise =
++  let eorig = SameAs g_expr in
++  let test_stmts, test_value = expr env test in
++  let setup, _, input = aux_var ~force:true env tok test_value in
++  let value = mk_e (Fetch input) (related_exp test) in
++  let non_nil =
++    mk_e (Operator ((G.NotEq, tok),
++      [Unnamed test_value; Unnamed (mk_e (Literal (G.Null tok)) NoOrig)])) NoOrig
++  in
++  let condition, bound_value = match kind with
++    | "WhenSome" | "IfSome" -> (non_nil, value)
++    | "WhenFirst" ->
++        (pm_len_cond tok test_value G.Gt 0,
++         Option.get (pm_slot_of value 0))
++    | _ -> (test_value, value)
++  in
++  let bindings = pattern_assign_statements env bound_value ~eorig pat in
++  let body_stmts, body_value = expr env body in
++  let else_stmts, else_value = expr env otherwise in
++  let result = fresh_lval tok in
++  let assign value = mk_s (Instr (mk_i (Assign (result, value)) NoOrig)) in
++  let otherwise = else_stmts @ [assign else_value] in
++  let branch = mk_s (If (tok, condition,
++    bindings @ body_stmts @ [assign body_value], otherwise)) in
++  let branch = if kind = "WhenFirst" then
++      mk_s (If (tok, non_nil, [branch], otherwise))
++    else branch
++  in
++  (test_stmts @ setup @ [branch], mk_e (Fetch result) eorig)
+ 
+ and expr_aux env ?(void = false) g_expr : stmts * exp =
+   let eorig = SameAs g_expr in
+@@ -2649,6 +2679,29 @@
+           in
+           call_generic env ~void tok eorig e (Tok.unsafe_fake_bracket apply_arg)
+       end
++  | G.OtherExpr
++      ((("WhenLet" | "WhenSome" | "WhenFirst" as kind), tok),
++       G.E {e = G.OtherExpr (_, [G.E {e = G.LetPattern (pat, test); _}]); _}
++       :: body)
++    when env.lang =*= Lang.Clojure ->
++      let nil = G.L (G.Null tok) |> G.e in
++      let body = match body with
++        | [] -> nil
++        | expressions -> G.OtherExpr (("ExprBlock", tok), expressions) |> G.e
++      in
++      clojure_conditional_binding env g_expr kind tok pat test body nil
++  | G.OtherExpr
++      ((("IfLet" | "IfSome" as kind), tok),
++       G.E {e = G.OtherExpr (("ExprBlock", _),
++         [G.E {e = G.OtherExpr (_, [G.E {e = G.LetPattern (pat, test); _}]); _};
++          G.E body]); _} :: else_opt)
++    when env.lang =*= Lang.Clojure ->
++      let otherwise = match else_opt with
++        | [] -> G.L (G.Null tok) |> G.e
++        | [G.E value] -> value
++        | _ -> raise (CLJ_ME1.Macroexpansion_error ("Invalid conditional binding", G.E g_expr))
++      in
++      clojure_conditional_binding env g_expr kind tok pat test body otherwise
+   (* Clojure: a kind of macroexpansion (macroexpand-1). *)
+   | G.OtherExpr ((todo_kind, tok), _ :: _)
+     when env.lang =*= Lang.Clojure && CLJ_ME1.is_macroexpandable todo_kind ->
+@@ -3575,6 +3628,8 @@
+       let pre_a2, e2 =
+         match opt_st2 with
+         | Some st2 -> stmt_expr env st2
++        | None when env.lang =*= Lang.Clojure ->
++            ([], mk_e (Literal (G.Null tok)) (related_tok tok))
+         | None ->
+             (* Coming from OCaml-land we would not expect this to happen... but
+              * we got some Ruby examples from r2c's SR team where there is an `if`
+--- a/src/analyzing/Eval_il_partial.ml
++++ b/src/analyzing/Eval_il_partial.ml
+@@ -294,6 +294,15 @@
+       | Some c1, Some c2 -> refine c1 c2)
+   | ___else___ -> G.NotCst
+ 
++and clojure_non_nil memo env (value : IL.exp) =
++  match value.e with
++  | Composite _ | RecordOrDict _ -> true
++  | _ -> match eval_memo memo env value with
++    | G.Sym {e = G.Container _; _}
++    | G.Cst (G.Cint | G.Cstr)
++    | G.Lit (G.Bool _ | G.Int _ | G.Float _ | G.String _ | G.Char _ | G.Atom _) -> true
++    | _ -> false
++
+ and eval_op memo (env : env) wop args =
+   let op, tok = wop in
+   (* Length is handled separately so we can fold it on a Composite argument.
+@@ -301,6 +310,13 @@
+    * would discard the shape we need. *)
+   match (op, args) with
+   | G.Length, [ Unnamed arg ] -> eval_length memo env arg
++  | ((G.Eq | G.NotEq) as comparison), [Unnamed left; Unnamed right]
++    when Lang.equal env.lang Lang.Clojure
++      && (let is_nil value = match eval_memo memo env value with
++            | G.Lit (G.Null _) -> true | _ -> false in
++          (is_nil left && clojure_non_nil memo env right)
++          || (is_nil right && clojure_non_nil memo env left)) ->
++      G.Lit (literal_of_bool (comparison =*= G.NotEq))
+   | _ ->
+   let cs =
+     args |> List_.map IL_helpers.exp_of_arg |> List_.map (eval_memo memo env)
+--- a/src/naming/Naming_AST.ml
++++ b/src/naming/Naming_AST.ml
+@@ -1201,7 +1201,7 @@
+       (* These expressions define scopes. *)
+       (* TODO: Create module in clojure's directory, make this more
+        * configurable (ask if construct is block etc.) *)
+-      | OtherExpr ((("ExprBlock" | "as->"), _block_tk),
++      | OtherExpr ((("ExprBlock" | "as->" | "WhenLet" | "WhenSome" | "WhenFirst"), _block_tk),
+                   expr_anys)
+         when lang =*= Lang.Clojure ->
+         (* Even if we parse a top level block, it does not

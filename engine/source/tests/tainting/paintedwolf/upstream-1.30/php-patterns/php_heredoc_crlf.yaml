@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "upstream-php",
+      "languages": [
+        "php"
+      ],
+      "severity": "ERROR",
+      "message": "Upstream PHP pattern regression",
+      "pattern": "$X = \"body\";\n"
+    }
+  ]
+}

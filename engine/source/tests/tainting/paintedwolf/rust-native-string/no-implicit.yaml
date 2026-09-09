@@ -1,0 +1,26 @@
+{
+  "rules": [
+    {
+      "id": "string-type",
+      "languages": [
+        "rust"
+      ],
+      "severity": "ERROR",
+      "message": "String type",
+      "patterns": [
+        {
+          "pattern": "fn $F(..., $VALUE: $TYPE, ...) { ... }"
+        },
+        {
+          "metavariable-name": {
+            "metavariable": "$TYPE",
+            "module": "std.string",
+            "symbol": [
+              "String"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
