@@ -148,7 +148,7 @@ class ReleaseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "another platform"):
             RELEASE.release_notice_bytes(self.package, lock, "linux-amd64")
 
-    def test_merge_lists_every_platform_and_checks_each_archive(self):
+    def test_merge_lists_the_released_platform_and_checks_its_archive(self):
         outputs = []
         for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"), ("linux-amd64", "linux", "amd64")):
             directory = self.fixture.root / ("out-" + platform)
@@ -159,15 +159,18 @@ class ReleaseTest(unittest.TestCase):
                    "sha256": RELEASE.ARTIFACT.digest(archive), "bytes": archive.stat().st_size}
             (directory / "release.json").write_text(json.dumps({"opengrep": {"version": "1.29.0+paintedwolf.26", "artifacts": [row]}}))
             outputs.append(directory)
-        metadata = RELEASE.merge(outputs, self.fixture.root / "merged")
-        self.assertEqual([(row["goos"], row["goarch"]) for row in metadata["opengrep"]["artifacts"]], [("darwin", "arm64"), ("linux", "amd64")])
+        darwin, linux = outputs
+        metadata = RELEASE.merge([darwin], self.fixture.root / "merged")
+        self.assertEqual([(row["goos"], row["goarch"]) for row in metadata["opengrep"]["artifacts"]], [("darwin", "arm64")])
         self.assertEqual(sorted(p.name for p in (self.fixture.root / "merged").iterdir()),
-                         sorted(["release.json", "opengrep-1.29.0+paintedwolf.26-darwin-arm64.tar.gz", "opengrep-1.29.0+paintedwolf.26-linux-amd64.tar.gz"]))
-        next(outputs[1].glob("*.tar.gz")).write_bytes(b"changed")
-        with self.assertRaisesRegex(ValueError, "differs from its descriptor"):
-            RELEASE.merge(outputs, self.fixture.root / "merged-again")
+                         sorted(["release.json", "opengrep-1.29.0+paintedwolf.26-darwin-arm64.tar.gz"]))
         with self.assertRaisesRegex(ValueError, "every released platform"):
-            RELEASE.merge(outputs[:1], self.fixture.root / "merged-once")
+            RELEASE.merge(outputs, self.fixture.root / "merged-both")
+        with self.assertRaisesRegex(ValueError, "each released platform once"):
+            RELEASE.merge([linux], self.fixture.root / "merged-linux")
+        next(darwin.glob("*.tar.gz")).write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "differs from its descriptor"):
+            RELEASE.merge([darwin], self.fixture.root / "merged-again")
 
     def test_cli_rejects_ambiguous_or_incomplete_modes(self):
         cases = ([], ["--artifact", "artifact"],

@@ -133,8 +133,8 @@ Set `RELEASE_TAG` to `v` followed by the exact version in the finalized
 against a frozen input snapshot and, on macOS, checks the executable's native
 signature before producing a deterministic archive and `release.json`. Linux
 engines carry no code signature; the release attestations bind their bytes.
-`--merge` combines the per-platform outputs into one release whose `release.json`
-lists every platform's archive. It does
+`--merge` assembles the released platform outputs into one release whose
+`release.json` lists each archive; published releases carry macOS arm64 only. It does
 not rebuild, resign, commit, or publish anything. Output directories must be new.
 
 The archive has nine flat regular files: `opengrep`, `source-lock.json`,
@@ -161,6 +161,9 @@ existing release or draft:
 ```sh
 gh workflow run native-release.yml --ref "$RELEASE_TAG" -f operation=build
 ```
+
+Add `-f linux=true` to also build and verify the Linux amd64 engine in the same
+run; it is not attached to the release.
 
 The workflow verifies tag, source commit, workflow commit and repository identity
 before building. Its isolated stages are:
