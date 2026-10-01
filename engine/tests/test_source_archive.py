@@ -148,6 +148,22 @@ class SourceArchiveTest(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in ARCHIVE.tracked_sources(engine)),
                          ["compiled.ml", "library.ml"])
 
+    def test_tracked_compiled_images_are_not_archived(self):
+        # tree-sitter-groovy tracks a built Mach-O library; notarization rejects
+        # any unsigned image nested in the bundled archive.
+        grammar = self.root / "grammar-groovy"
+        grammar.mkdir()
+        subprocess.run(["git", "init", "--quiet", str(grammar)], check=True)
+        images = {"languages.so": b"\xcf\xfa\xed\xfe" + bytes(28), "linux.so": b"\x7fELF" + bytes(28),
+                  "universal.so": b"\xca\xfe\xba\xbe\x00\x00\x00\x02" + bytes(24),
+                  "objects.a": b"!<arch>\n" + bytes(24)}
+        sources = {"grammar.js": b"module.exports = grammar({})\n",
+                   "Example.class": b"\xca\xfe\xba\xbe\x00\x00\x00\x34" + bytes(24)}
+        for name, raw in {**images, **sources}.items():
+            (grammar / name).write_bytes(raw)
+        subprocess.run(["git", "add", "."], cwd=grammar, check=True)
+        self.assertEqual(sorted(path.name for path in ARCHIVE.tracked_sources(grammar)), sorted(sources))
+
     def test_retained_third_party_sources_are_archived_under_their_own_prefix(self):
         retained = self.root / "third-party"
         (retained / "native_gmp").mkdir(parents=True)

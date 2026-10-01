@@ -28,6 +28,23 @@ def is_test_corpus(name):
     return PurePosixPath(name).parts[0] in TEST_TREES
 
 
+# Compiled images some upstream trees track are not source, and an unsigned
+# Mach-O inside the archive fails notarization of every app that bundles it.
+IMAGE_MAGIC = {b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe"}
+
+
+def is_compiled_image(path):
+    if path.is_symlink() or not path.is_file():
+        return False
+    with path.open("rb") as handle:
+        header = handle.read(8)
+    if header[:4] in IMAGE_MAGIC or header == b"!<arch>\n":
+        return True
+    # Universal Mach-O shares the Java class magic; it counts a few architectures
+    # where a class file stores its version.
+    return header[:4] == b"\xca\xfe\xba\xbe" and int.from_bytes(header[4:8], "big") < 32
+
+
 def tracked_sources(root):
     entries = subprocess.check_output(["git", "ls-files", "--stage", "-z"], cwd=root)
     for entry in entries.decode().split("\0"):
@@ -45,7 +62,7 @@ def tracked_sources(root):
             if actual != revision:
                 raise RuntimeError("Source submodule differs from its revision: " + name)
             yield from tracked_sources(path)
-        elif path.exists() or path.is_symlink():
+        elif (path.exists() or path.is_symlink()) and not is_compiled_image(path):
             yield path
 
 
