@@ -27,6 +27,8 @@ MAX_EXPANDED_BYTES = 2 << 30
 # Released platforms: the target an artifact is validated as, and where its notices live.
 PLATFORMS = {"darwin-arm64": (("darwin", "arm64"), "licensing"),
              "linux-amd64": (("linux", "amd64"), "licensing/linux-amd64")}
+# Linux engines build and qualify for development; published releases are macOS only.
+RELEASED = ("darwin-arm64",)
 
 
 def release_notice_bytes(package, lock, platform="darwin-arm64"):
@@ -145,7 +147,7 @@ def merge(sources, destination):
     """One release from per-platform packaging outputs: every archive checked against the
     descriptor that named it, and one descriptor listing all of them."""
     ARTIFACT.require(not destination.exists(), "Release output directory must not already exist")
-    ARTIFACT.require(len(sources) == len(PLATFORMS), "A release carries every released platform")
+    ARTIFACT.require(len(sources) == len(RELEASED), "A release carries every released platform")
     shared, artifacts, archives = None, [], []
     for source in sources:
         descriptor = ARTIFACT.read_json(source / "release.json")["opengrep"]
@@ -162,7 +164,7 @@ def merge(sources, destination):
         artifacts.append(row)
         archives.append(archive)
     platforms = sorted((row["goos"], row["goarch"]) for row in artifacts)
-    ARTIFACT.require(platforms == sorted(target for target, _ in PLATFORMS.values()),
+    ARTIFACT.require(platforms == sorted(PLATFORMS[name][0] for name in RELEASED),
                      "A release carries each released platform once")
     destination.mkdir(parents=True)
     for archive in archives:

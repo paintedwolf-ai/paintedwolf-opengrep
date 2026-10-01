@@ -23,7 +23,8 @@ def release_files(directory, identity):
                           ("base_revision", lock["revision"]), ("origin", "downstream"), ("license", "LGPL-2.1")):
         PROVENANCE.require(record.get(key) == expected, "Release descriptor identity differs: " + key)
     archives, evidence, expected = [], [], []
-    for platform, (target, _) in sorted(RELEASE.PLATFORMS.items(), key=lambda item: item[1][0]):
+    for platform in sorted(RELEASE.RELEASED, key=lambda name: RELEASE.PLATFORMS[name][0]):
+        target = RELEASE.PLATFORMS[platform][0]
         name = "opengrep-" + identity["version"] + "-" + platform + ".tar.gz"
         archive = directory / name
         expected.append({"goos": target[0], "goarch": target[1], "sha256": PROVENANCE.digest(archive),
@@ -63,7 +64,7 @@ def draft(directory, identity):
     tag = identity["ref"].removeprefix("refs/tags/")
     with tempfile.TemporaryDirectory(prefix="opengrep-draft-") as temporary:
         notes = Path(temporary) / "notes.md"
-        notes.write_text("Qualified engines: Developer ID macOS arm64, and Linux amd64 on the glibc 2.35 baseline.\n\n"
+        notes.write_text("Qualified engine: Developer ID macOS arm64.\n\n"
                          "Source commit: " + identity["commit"]
                          + "\nBuild run: https://github.com/" + PROVENANCE.REPOSITORY + "/actions/runs/"
                          + identity["run_id"] + "/attempts/" + identity["run_attempt"]

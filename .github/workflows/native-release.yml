@@ -10,6 +10,10 @@ on:
         options:
           - build
           - check-signing
+      linux:
+        description: Also build and verify the Linux amd64 engine; releases carry macOS only
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -269,6 +273,7 @@ jobs:
 
   compile-linux:
     needs: preflight
+    if: inputs.linux
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     outputs:
@@ -363,7 +368,7 @@ jobs:
           retention-days: 14
 
   release:
-    needs: [verify, verify-linux]
+    needs: verify
     environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -384,22 +389,16 @@ jobs:
           artifact-ids: ${{ needs.verify.outputs.artifact-id }}
           path: ${{ runner.temp }}/darwin
           merge-multiple: true
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          artifact-ids: ${{ needs.verify-linux.outputs.artifact-id }}
-          path: ${{ runner.temp }}/linux
-          merge-multiple: true
-      - name: Recheck the reviewed release source and build identity, and combine the platforms
+      - name: Recheck the reviewed release source and build identity, and assemble the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 scripts/release_provenance.py preflight
           python3 scripts/release_provenance.py check-evidence --platform darwin-arm64 --evidence "$RUNNER_TEMP/darwin/build-evidence-darwin-arm64.json"
-          python3 scripts/release_provenance.py check-evidence --platform linux-amd64 --evidence "$RUNNER_TEMP/linux/build-evidence-linux-amd64.json"
           mkdir "$RUNNER_TEMP/evidence"
-          mv "$RUNNER_TEMP/darwin/build-evidence-darwin-arm64.json" "$RUNNER_TEMP/linux/build-evidence-linux-amd64.json" "$RUNNER_TEMP/evidence/"
-          python3 scripts/release.py --merge "$RUNNER_TEMP/darwin" "$RUNNER_TEMP/linux" --output "$RUNNER_TEMP/release"
+          mv "$RUNNER_TEMP/darwin/build-evidence-darwin-arm64.json" "$RUNNER_TEMP/evidence/"
+          python3 scripts/release.py --merge "$RUNNER_TEMP/darwin" --output "$RUNNER_TEMP/release"
           cp "$RUNNER_TEMP"/evidence/*.json "$RUNNER_TEMP/release/"
       - name: Attest the verified archive, descriptor, and original build evidence
         id: attest
