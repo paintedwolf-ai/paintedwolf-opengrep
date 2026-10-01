@@ -1,0 +1,95 @@
+name: Linux release rehearsal
+# The release workflow's Linux compile and verify steps, run on a branch before a
+# release tag exists. Only the steps bound to a tag's identity are left out.
+on:
+  push:
+    branches: [linux-release-rehearsal]
+permissions:
+  contents: read
+jobs:
+  compile-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    outputs:
+      artifact-id: ${{ steps.handoff.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.3.0'
+      - name: Prepare on the runner, compile on the glibc 2.35 baseline
+        run: |
+          set -euo pipefail
+          docker build -t opengrep-linux-compile engine/linux
+          python3 engine/build.py "$RUNNER_TEMP/native-work" --prepare-only --jobs 4
+          docker run --rm -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP:$RUNNER_TEMP" -w "$GITHUB_WORKSPACE" \
+            opengrep-linux-compile python3 engine/build.py "$RUNNER_TEMP/native-work" --compile-prepared --jobs 4
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/native-work"
+          mkdir "$RUNNER_TEMP/outgoing"
+          python3 scripts/linux_release.py export --build-directory "$RUNNER_TEMP/native-work" --output "$RUNNER_TEMP/outgoing/handoff.tar.gz"
+          python3 -c "import json, pathlib, sys; sys.path.insert(0, 'scripts'); import release_provenance as p; print(json.dumps(p.linux_tool_versions(pathlib.Path(sys.argv[1]).resolve(), 'opengrep-linux-compile'), indent=1))" "$RUNNER_TEMP/native-work"
+      - id: handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-compiled-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/outgoing/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+      - name: Retain failed build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/native-work/contracts.jsonl
+            ${{ runner.temp }}/native-work/platform-checks.json
+            ${{ runner.temp }}/native-work/artifact/provenance.json
+
+  verify-linux:
+    needs: compile-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.compile-linux.outputs.artifact-id }}
+          path: ${{ runner.temp }}/incoming
+          merge-multiple: true
+      - name: Qualify the Linux engine on a clean runner
+        run: |
+          set -euo pipefail
+          python3 scripts/linux_release.py prepare-python --output "$RUNNER_TEMP/verify-python"
+          "$RUNNER_TEMP/verify-python/bin/python" scripts/linux_release.py verify --input "$RUNNER_TEMP/incoming/handoff.tar.gz" --output "$RUNNER_TEMP/artifact" --diagnostics "$RUNNER_TEMP/verify-diagnostics"
+          python3 scripts/release.py --platform linux-amd64 --artifact "$RUNNER_TEMP/artifact" --output "$RUNNER_TEMP/release" --tag v1.30.0+paintedwolf.37 --channel stable
+          cat "$RUNNER_TEMP/release/release.json"
+      - name: Retain failed qualification diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-verify-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verify-diagnostics/*
+          if-no-files-found: ignore
+          retention-days: 3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-linux-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
