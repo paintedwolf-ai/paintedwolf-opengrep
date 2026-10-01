@@ -41,6 +41,8 @@ class ProvenanceTest(unittest.TestCase):
             "ImageOS": "macos15", "ImageVersion": "20260908.1", "RUNNER_OS": "macOS", "RUNNER_ARCH": "ARM64"}
         self.identity = {**PROVENANCE.workflow_identity(self.environment, self.lock), "source_lock_sha256": "c" * 64}
         self.evidence = PROVENANCE.build_evidence(self.handoff, self.identity, self.environment, {"clang": "Apple clang 17"})
+        linux = dict(self.environment, GITHUB_JOB="compile-linux", ImageOS="ubuntu24", RUNNER_OS="Linux", RUNNER_ARCH="X64")
+        self.linux_evidence = PROVENANCE.build_evidence(self.handoff, self.identity, linux, {"gcc": "gcc 11.4.0"}, "linux-amd64")
 
     def test_workflow_identity_binds_reviewed_source_and_host(self):
         for key, value in (("GITHUB_WORKFLOW_SHA", "b" * 40), ("GITHUB_REPOSITORY_ID", "999"),
@@ -161,29 +163,32 @@ class ProvenanceTest(unittest.TestCase):
         directory.mkdir()
         (self.root / "engine").mkdir()
         (self.root / "engine/source-lock.json").write_text(json.dumps(self.lock))
-        archive = directory / ("opengrep-" + self.identity["version"] + "-darwin-arm64.tar.gz")
-        archive.write_bytes(b"already qualified signed archive")
+        artifacts = []
+        for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"), ("linux-amd64", "linux", "amd64")):
+            archive = directory / ("opengrep-" + self.identity["version"] + "-" + platform + ".tar.gz")
+            archive.write_bytes(b"already qualified archive for " + platform.encode())
+            artifacts.append({"goos": goos, "goarch": goarch, "sha256": PROVENANCE.digest(archive), "bytes": archive.stat().st_size,
+                              "url": "https://github.com/" + PROVENANCE.REPOSITORY + "/releases/download/"
+                              + self.environment["GITHUB_REF_NAME"] + "/" + archive.name})
         metadata = {"opengrep": {"version": self.identity["version"], "source_lock_sha256": self.identity["source_lock_sha256"],
             "upstream_version": self.lock["upstream_version"], "revision": self.lock["patch_version"],
-            "base_revision": self.lock["revision"], "origin": "downstream", "license": "LGPL-2.1", "artifacts": [{
-                "goos": "darwin", "goarch": "arm64", "sha256": PROVENANCE.digest(archive), "bytes": archive.stat().st_size,
-                "url": "https://github.com/" + PROVENANCE.REPOSITORY + "/releases/download/"
-                + self.environment["GITHUB_REF_NAME"] + "/" + archive.name}]}}
+            "base_revision": self.lock["revision"], "origin": "downstream", "license": "LGPL-2.1", "artifacts": artifacts}}
         (directory / "release.json").write_text(json.dumps(metadata))
-        (directory / "build-evidence.json").write_text(json.dumps(self.evidence))
+        (directory / PROVENANCE.evidence_name("darwin-arm64")).write_text(json.dumps(self.evidence))
+        (directory / PROVENANCE.evidence_name("linux-amd64")).write_text(json.dumps(self.linux_evidence))
         (directory / "provenance.sigstore.json").write_text("verified by cryptographic verifier")
         return directory
 
     def test_promotion_rejects_changed_and_extra_assets_before_upload(self):
         directory = self.release_directory()
         with mock.patch.object(PROVENANCE, "ROOT", self.root):
-            self.assertEqual(len(PROMOTE.release_files(directory, self.identity)), 4)
+            self.assertEqual(len(PROMOTE.release_files(directory, self.identity)), 6)
             (directory / "unexpected.txt").write_text("extra payload")
-            with self.assertRaisesRegex(ValueError, "exactly the archive"):
+            with self.assertRaisesRegex(ValueError, "exactly the archives"):
                 PROMOTE.release_files(directory, self.identity)
             (directory / "unexpected.txt").unlink()
             next(directory.glob("*.tar.gz")).write_bytes(b"different archive")
-            with self.assertRaisesRegex(ValueError, "archive differs"):
+            with self.assertRaisesRegex(ValueError, "archives differ"):
                 PROMOTE.release_files(directory, self.identity)
 
     def test_complete_draft_uses_release_permissions_without_administration_access(self):
@@ -210,8 +215,14 @@ class ProvenanceTest(unittest.TestCase):
         state = json.loads(state_path.read_text())
         self.assertTrue(state["created"])
         self.assertEqual([arguments[:2] for arguments in state["calls"]], [
-            ["attestation", "verify"], ["attestation", "verify"], ["attestation", "verify"],
-            ["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
+            ["attestation", "verify"]] * 5 + [["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
+
+    def test_linux_evidence_binds_its_own_job_and_runner(self):
+        PROVENANCE.check_evidence(self.linux_evidence, self.identity, self.handoff, "linux-amd64")
+        for evidence, platform in ((self.evidence, "linux-amd64"), (self.linux_evidence, "darwin-arm64"),
+                                   (dict(self.linux_evidence, runner=dict(self.linux_evidence["runner"], RUNNER_ARCH="ARM64")), "linux-amd64")):
+            with self.subTest(platform=platform), self.assertRaises(ValueError):
+                PROVENANCE.check_evidence(evidence, self.identity, self.handoff, platform)
 
     def test_unverified_release_never_creates_draft(self):
         directory = self.release_directory()

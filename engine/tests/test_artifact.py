@@ -652,3 +652,45 @@ class ArtifactTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LinuxPlatformRulesTest(unittest.TestCase):
+    LOCK = {"glibc_max": "2.35", "python": {"sha256": "e" * 64}}
+
+    def image(self, path, **facts):
+        return dict({"path": path, "sha256": "a" * 64, "architecture": "amd64", "glibc_versions": ["2.17", "2.34"],
+                     "dependencies": ["libc.so.6"], "rpaths": []}, **facts)
+
+    def checks(self, **changes):
+        standalone = [self.image("opengrep.bin", rpaths=["$ORIGIN"]), self.image("semgrep/bin/opengrep-core"),
+                      self.image("_ssl.so", dependencies=["libssl.so.3", "libc.so.6"], rpaths=["$ORIGIN"]),
+                      self.image("libssl.so.3")]
+        value = {"schema_version": 1, "platform": "linux", "architecture": "amd64", "glibc_max": "2.35",
+                 "outer": self.image("opengrep", sha256="b" * 64), "standalone": standalone, "extracted": standalone}
+        value.update(changes)
+        return value
+
+    def validate(self, checks, runtime=None):
+        ARTIFACT.validate_linux_platform(checks, runtime or {"python_runtime": {"source_sha256": "e" * 64}},
+                                         self.LOCK, "amd64", "b" * 64)
+
+    def test_consumer_rules_accept_a_bound_distribution(self):
+        self.validate(self.checks())
+
+    def test_consumer_rules_reject_each_violation(self):
+        missing = [image for image in self.checks()["standalone"] if image["path"] != "libssl.so.3"]
+        cases = (
+            (self.checks(glibc_max="2.39"), "identity differs"),
+            (self.checks(outer=self.image("opengrep", sha256="c" * 64)), "different executable"),
+            (self.checks(outer=self.image("opengrep", sha256="b" * 64, dependencies=["libz.so.1"])), "outside glibc"),
+            (self.checks(extracted=[]), "extracted payload"),
+            (self.checks(standalone=missing, extracted=missing), "does not carry"),
+            (self.checks(standalone=[self.image("opengrep.bin", glibc_versions=["2.38"]), self.image("semgrep/bin/opengrep-core")],
+                         extracted=[self.image("opengrep.bin", glibc_versions=["2.38"]), self.image("semgrep/bin/opengrep-core")]),
+             "glibc baseline"),
+        )
+        for checks, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                self.validate(checks)
+        with self.assertRaisesRegex(ValueError, "locked source"):
+            self.validate(self.checks(), {"python_runtime": {"source_sha256": "f" * 64}})

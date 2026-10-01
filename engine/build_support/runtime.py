@@ -8,6 +8,7 @@ import platform
 import re
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import tempfile
 
@@ -42,11 +43,16 @@ def download(spec, destination):
 
 
 def native_libraries(root, spec, jobs):
+    """Build the pinned native libraries statically under root/prefix. A macOS spec names
+    a deployment target the compiler flags carry; a Linux spec builds with plain -O2."""
     prefix = root / "prefix"
-    target = spec["deployment_target"]
-    flags = "-O2 -mmacosx-version-min=" + target
-    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET=target, CFLAGS=flags, CXXFLAGS=flags,
-               LDFLAGS="-mmacosx-version-min=" + target)
+    target = spec.get("deployment_target")
+    if target:
+        flags = "-O2 -mmacosx-version-min=" + target
+        env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET=target, CFLAGS=flags, CXXFLAGS=flags,
+                   LDFLAGS="-mmacosx-version-min=" + target)
+    else:
+        env = dict(os.environ, CFLAGS="-O2 -fPIC", CXXFLAGS="-O2 -fPIC")
     records = []
     for library in spec["native_libraries"]:
         name = library["name"] + "-" + library["version"]
@@ -132,6 +138,11 @@ def tree_sitter(root, spec):
     name = "tree-sitter-" + spec["version"]
     run(["patch", "--backup", name + "/Makefile", "../patch/" + name + "/Makefile.patch"], downloads)
     run(["./scripts/install-tree-sitter-lib"], root)
+    if platform.system() == "Linux":
+        # Without the shared objects the linker takes the archive, so the engine
+        # carries tree-sitter instead of depending on the build tree.
+        for shared in (root / "tree-sitter/lib").glob("libtree-sitter.so*"):
+            shared.unlink()
 
 
 def deployment_versions(load_commands):
@@ -228,12 +239,182 @@ def validate_macos(root, target):
     (root / "platform-checks.json").write_text(json.dumps({"deployment_target": target, "images": records}, indent=2) + "\n")
 
 
+
+ELF_MAGIC = b"\x7fELF"
+ELF_MACHINES = {62: "amd64", 183: "arm64"}
+SHT_DYNAMIC = 6
+SHT_GNU_VERNEED = 0x6FFFFFFE
+DT_NEEDED, DT_RPATH, DT_RUNPATH = 1, 15, 29
+
+
+def is_elf_image(path):
+    with open(path, "rb") as source:
+        return source.read(4) == ELF_MAGIC
+
+
+def _elf_string(data, offset):
+    end = data.index(b"\0", offset)
+    return data[offset:end].decode()
+
+
+def read_elf(path):
+    """What a little-endian ELF64 image needs at load time: its architecture, the shared
+    libraries it names, its runtime search paths, and the glibc symbol versions it requires."""
+    with open(path, "rb") as source:
+        data = source.read()
+    if data[:4] != ELF_MAGIC or data[4] != 2 or data[5] != 1:
+        raise ValueError("Not a little-endian ELF64 image: " + str(path))
+    machine = struct.unpack_from("<H", data, 18)[0]
+    if machine not in ELF_MACHINES:
+        raise ValueError("Unsupported ELF machine %d: %s" % (machine, path))
+    shoff = struct.unpack_from("<Q", data, 0x28)[0]
+    shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
+    sections = [struct.unpack_from("<IIQQQQIIQQ", data, shoff + index * shentsize) for index in range(shnum)]
+    dependencies, rpaths, versions = [], [], set()
+    for _name, kind, _flags, _address, offset, size, link, info, _align, entsize in sections:
+        if kind == SHT_DYNAMIC:
+            strings = sections[link][4]
+            for position in range(offset, offset + size, entsize or 16):
+                tag, value = struct.unpack_from("<qQ", data, position)
+                if tag == 0:
+                    break
+                if tag == DT_NEEDED:
+                    dependencies.append(_elf_string(data, strings + value))
+                elif tag in (DT_RPATH, DT_RUNPATH):
+                    rpaths.extend(part for part in _elf_string(data, strings + value).split(":") if part)
+        elif kind == SHT_GNU_VERNEED:
+            strings = sections[link][4]
+            position = offset
+            for _ in range(info):
+                _version, count, _file, aux, following = struct.unpack_from("<HHIII", data, position)
+                entry = position + aux
+                for _ in range(count):
+                    _hash, _vflags, _other, name, following_aux = struct.unpack_from("<IHHII", data, entry)
+                    label = _elf_string(data, strings + name)
+                    if label.startswith("GLIBC_") and label[6:7].isdigit():
+                        versions.add(label[6:])
+                    entry += following_aux
+                position += following
+    order = lambda value: tuple(int(part) for part in value.split("."))  # noqa: E731
+    return {"architecture": ELF_MACHINES[machine], "dependencies": list(dict.fromkeys(dependencies)),
+            "rpaths": list(dict.fromkeys(rpaths)), "glibc_versions": sorted(versions, key=order)}
+
+
+# The libraries a Linux image may take from the host: glibc and the loader, and
+# libgcc_s, which glibc itself loads for thread cancellation and unwinding, so
+# every glibc system carries it (as manylinux also assumes).
+LINUX_SYSTEM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
+                          "libutil.so.1", "libresolv.so.2", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1",
+                          "libgcc_s.so.1"}
+LINUX_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
+
+
+def static_cxx_runtime(prefix):
+    """The compiler's libstdc++ archive in the prefix, which the linker searches before
+    the system directories, so C++ code links it statically."""
+    archive = Path(subprocess.check_output(["g++", "-print-file-name=libstdc++.a"], text=True).strip())
+    if not archive.is_absolute() or not archive.is_file():
+        raise RuntimeError("The C++ compiler has no static libstdc++")
+    shutil.copy2(archive, prefix / "lib/libstdc++.a")
+    return {"libstdc++": {"archive": str(archive), "sha256": digest(archive)}}
+
+
+def python_from_source(root, spec, prefix, jobs):
+    """CPython built from its pinned source tarball, with zlib from the prefix linked
+    statically and expat and libmpdec from CPython's own tree."""
+    archive = root / ("Python-" + spec["version"] + ".tar.xz")
+    download(spec, archive)
+    source = root / "python-source"
+    source.mkdir()
+    run(["tar", "-xf", str(archive), "--strip-components=1", "-C", str(source)])
+    install = root / "python"
+    env = dict(os.environ, CFLAGS="-O2", CPPFLAGS="-I" + str(prefix / "include"), LDFLAGS="-L" + str(prefix / "lib"),
+               ZLIB_CFLAGS="-I" + str(prefix / "include"), ZLIB_LIBS=str(prefix / "lib/libz.a"))
+    run(["./configure", "--prefix=" + str(install), *spec["configure"]], source, env)
+    run(["make", "-j" + str(jobs)], source, env)
+    run(["make", "install"], source, env)
+    python = install / "bin" / ("python" + spec["series"])
+    run([str(python), "-c", "import sys, ssl, zlib, pyexpat, lzma, bz2, ctypes, sqlite3; "
+         "assert '.'.join(map(str, sys.version_info[:3])) == " + repr(spec["version"])])
+    return python, {"version": spec["version"], "series": spec["series"], "url": spec["url"],
+                    "source_sha256": spec["sha256"], "configure": spec["configure"]}
+
+
+def linux(root, spec, jobs):
+    """The Linux runtime: the pinned native libraries built statically, the static C++
+    runtime, and CPython from its pinned source."""
+    root.mkdir()
+    prefix, native = native_libraries(root, spec, jobs)
+    native["static_runtime"] = static_cxx_runtime(prefix)
+    python, runtime = python_from_source(root, spec["python"], prefix, jobs)
+    env = {"CPPFLAGS": "-I" + str(prefix / "include"), "LDFLAGS": "-L" + str(prefix / "lib"),
+           "PKG_CONFIG_PATH": str(prefix / "lib/pkgconfig"),
+           "LIBRARY_PATH": str(prefix / "lib"), "C_INCLUDE_PATH": str(prefix / "include"),
+           "SEMGREP_LIBEV_ARCHIVE_PATH": str(prefix / "lib/libev.a")}
+    (root / "runtime.json").write_text(json.dumps({"python": str(python), "environment": env,
+                                                  "native": native, "python_runtime": runtime}, indent=2) + "\n")
+
+
+def linux_images(directory):
+    """Every ELF image under a distribution, with what it needs at load time."""
+    images = []
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink() or not path.is_file() or not is_elf_image(path):
+            continue
+        images.append(dict(read_elf(path), path=path.relative_to(directory).as_posix(), sha256=digest(path)))
+    return images
+
+
+def validate_linux_image(image, architecture, maximum):
+    if image["architecture"] != architecture:
+        raise RuntimeError("Packaged ELF image has another architecture: " + image["path"])
+    for version in image["glibc_versions"]:
+        if tuple(int(part) for part in version.split(".")) > maximum:
+            raise RuntimeError("ELF image needs glibc %s, above the release baseline: %s" % (version, image["path"]))
+    for value in image["rpaths"]:
+        if value != "$ORIGIN" and not value.startswith("$ORIGIN/"):
+            raise RuntimeError("ELF image has a build-host runpath: " + image["path"])
+
+
+def validate_linux(cli, extracted, glibc_max):
+    """The platform report for a Linux onefile build: the launcher depends only on
+    glibc, every packaged image stays within the glibc baseline and finds its non-system
+    libraries inside the distribution, and the extracted payload equals the standalone one."""
+    architecture = LINUX_ARCHITECTURES[platform.machine()]
+    maximum = tuple(int(part) for part in glibc_max.split("."))
+    outer = dict(read_elf(cli / "opengrep"), path="opengrep", sha256=digest(cli / "opengrep"))
+    validate_linux_image(outer, architecture, maximum)
+    if outer["rpaths"] or set(outer["dependencies"]) - LINUX_SYSTEM_LIBRARIES:
+        raise RuntimeError("Onefile launcher depends on libraries outside glibc")
+    standalone = linux_images(cli / "entrypoint.dist")
+    extracted_images = linux_images(extracted)
+    if standalone != extracted_images:
+        raise RuntimeError("Extracted payload differs from the standalone distribution")
+    paths = {image["path"] for image in standalone}
+    if not {"opengrep.bin", "semgrep/bin/opengrep-core"} <= paths:
+        raise RuntimeError("Required engine images are missing from the distribution")
+    for image in standalone:
+        validate_linux_image(image, architecture, maximum)
+        base = Path(image["path"]).parent
+        search = [(base / value.removeprefix("$ORIGIN").lstrip("/")).as_posix() for value in image["rpaths"]]
+        for library in image["dependencies"]:
+            if library in LINUX_SYSTEM_LIBRARIES:
+                continue
+            if not any(os.path.normpath(os.path.join(directory, library)) in paths for directory in search):
+                raise RuntimeError("ELF image %s needs %s, which the distribution does not carry" % (image["path"], library))
+    report = {"schema_version": 1, "platform": "linux", "architecture": architecture, "glibc_max": glibc_max,
+              "outer": outer, "standalone": standalone, "extracted": extracted_images}
+    (cli / "platform-checks.json").write_text(json.dumps(report, indent=2) + "\n")
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("macos", "tree-sitter", "validate-macos"))
+    parser.add_argument("mode", choices=("macos", "linux", "tree-sitter", "validate-macos", "validate-linux"))
     parser.add_argument("root", type=Path)
     parser.add_argument("lock", type=Path)
     parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument("--extracted", type=Path, help="validate-linux: the onefile payload as extracted at run time")
     args = parser.parse_args()
     if not 1 <= args.jobs <= 16:
         parser.error("jobs must be between 1 and 16")
@@ -244,6 +425,12 @@ def main():
         return
     if args.mode == "tree-sitter":
         tree_sitter(root, lock["tree_sitter"])
+        return
+    if args.mode == "linux":
+        linux(root, lock["linux"], args.jobs)
+        return
+    if args.mode == "validate-linux":
+        validate_linux(root, args.extracted.resolve(), lock["linux"]["glibc_max"])
         return
     root.mkdir()
     spec = lock["macos"]

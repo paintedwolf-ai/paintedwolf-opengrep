@@ -32,7 +32,7 @@ def main():
         assert arguments[3:11] == ["--repo", identity["repository"], "--verify-tag", "--draft",
                                    "--target", identity["commit"], "--title", arguments[2]]
         assert arguments[11] == "--notes-file" and Path(arguments[12]).is_file()
-        assert len(arguments[13:]) == 4
+        assert len(arguments[13:]) == len(state["release"]["assets"])
         assert {Path(path).name for path in arguments[13:]} == {asset["name"] for asset in state["release"]["assets"]}
         state["created"] = True
         result = state["release"]["html_url"]

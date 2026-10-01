@@ -271,8 +271,66 @@ def validate_platform(directory, package, target, binary_hash):
             if name == "opengrep":
                 require(image.get("sha256") == binary_hash, "Platform checks bind a different executable")
         require("opengrep" in seen, "Platform executable check missing")
+    elif system == "linux":
+        validate_linux_platform(checks, runtime, read_json(package / "locks/runtimes.json")["linux"], arch, binary_hash)
     else:
         raise ValueError("No maintained platform qualification validator for " + system)
+
+
+# glibc and the loader, and libgcc_s, which glibc itself loads for thread cancellation and
+# unwinding, so every glibc system carries it (as manylinux also assumes).
+LINUX_SYSTEM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
+                          "libutil.so.1", "libresolv.so.2", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1",
+                          "libgcc_s.so.1"}
+
+
+def validate_linux_image(image, arch, ceiling):
+    name = image.get("path")
+    require(isinstance(name, str) and name and not PurePosixPath(name).is_absolute()
+            and ".." not in PurePosixPath(name).parts, "Invalid Linux image path")
+    require(image.get("architecture") == arch, f"Linux image architecture mismatch: {name}")
+    require(isinstance(image.get("sha256"), str) and len(image["sha256"]) == 64, f"Linux image digest missing: {name}")
+    versions = image.get("glibc_versions")
+    require(isinstance(versions, list) and all(
+        isinstance(v, str) and deployment_version([int(part) for part in v.split(".")]) <= ceiling for v in versions),
+        f"Linux image exceeds the glibc baseline: {name}")
+    for value in image.get("rpaths", []):
+        require(value == "$ORIGIN" or value.startswith("$ORIGIN/"), f"Linux image has a build-host runpath: {name}")
+    for library in image.get("dependencies", []):
+        require(isinstance(library, str) and library and "/" not in library, f"Invalid Linux dependency: {name}")
+
+
+def validate_linux_platform(checks, runtime, lock, arch, binary_hash):
+    """The rules a consumer applies to a Linux engine: glibc baseline, a launcher that
+    depends only on glibc, every library carried by the distribution, the extracted
+    payload equal to the standalone one, and CPython from the locked source."""
+    baseline = lock["glibc_max"]
+    ceiling = deployment_version([int(part) for part in baseline.split(".")])
+    require(checks.get("schema_version") == 1 and checks.get("platform") == "linux"
+            and checks.get("architecture") == arch and checks.get("glibc_max") == baseline,
+            "Linux platform report identity differs")
+    require(runtime.get("python_runtime", {}).get("source_sha256") == lock["python"]["sha256"],
+            "Linux Python runtime differs from its locked source")
+    outer = checks.get("outer", {})
+    require(outer.get("path") == "opengrep" and outer.get("sha256") == binary_hash,
+            "Platform checks bind a different executable")
+    validate_linux_image(outer, arch, ceiling)
+    require(not outer.get("rpaths") and set(outer.get("dependencies", [])) <= LINUX_SYSTEM_LIBRARIES,
+            "Linux launcher depends on libraries outside glibc")
+    standalone = checks.get("standalone")
+    require(isinstance(standalone, list) and standalone and standalone == checks.get("extracted"),
+            "Linux platform report does not bind the extracted payload to the distribution")
+    paths = [image.get("path") for image in standalone]
+    require(len(set(paths)) == len(paths), "Duplicate Linux image")
+    require({"opengrep.bin", "semgrep/bin/opengrep-core"} <= set(paths), "Required Linux engine images missing")
+    for image in standalone:
+        validate_linux_image(image, arch, ceiling)
+        base = PurePosixPath(image["path"]).parent
+        search = [posixpath.normpath(str(base / value.removeprefix("$ORIGIN").lstrip("/"))) for value in image.get("rpaths", [])]
+        for library in image.get("dependencies", []):
+            if library not in LINUX_SYSTEM_LIBRARIES:
+                require(any(posixpath.normpath(posixpath.join(directory, library)) in paths for directory in search),
+                        f"Linux image {image['path']} needs {library}, which the distribution does not carry")
 
 
 def validate_artifact(directory, package, lock, target, *, require_license=True, profile=None, inspect=None):
@@ -299,8 +357,13 @@ def validate_artifact(directory, package, lock, target, *, require_license=True,
     require(os.access(directory / "opengrep", os.X_OK), "Artifact executable is not executable")
     signing = signing_module()
     profile = profile or signing.SigningProfile.parse(None, platform=target[0])
-    signing.validate_signing_record(provenance.get("signing"), profile,
-                                    provenance["binary_sha256"], provenance["binary_bytes"])
+    if target[0] == "linux":
+        # Linux engines carry no code signature; release attestations bind their bytes.
+        require(provenance.get("signing") is None and profile.record()["mode"] == "adhoc",
+                "Linux artifacts carry no signing record")
+    else:
+        signing.validate_signing_record(provenance.get("signing"), profile,
+                                        provenance["binary_sha256"], provenance["binary_bytes"])
     if profile.record()["mode"] == "developer-id":
         require(inspect is not None, "Developer ID artifact requires native signature validation")
         require(inspect(directory / "opengrep") == provenance["signing"]["outer"],

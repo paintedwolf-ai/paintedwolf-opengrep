@@ -29,6 +29,24 @@ import sources  # noqa: E402
 EVIDENCE = HERE / "evidence"
 EVIDENCE_LOCK = HERE / "evidence-lock.json"
 INVENTORY = HERE / "inventory.json"
+# The platform these commands describe, and where its documents live: macOS at the top
+# of this directory, other platforms in a directory of their own. Set by main().
+PLATFORM = "macos-arm64"
+OUTPUT = HERE
+# Groups whose inputs every platform shares, so other platforms reuse macOS evidence.
+SHARED_GROUPS = ("engine", "parsers", "grammars", "ocaml")
+
+
+def use_platform(platform):
+    global PLATFORM, OUTPUT, EVIDENCE_LOCK, INVENTORY
+    PLATFORM = platform
+    OUTPUT = HERE if platform == "macos-arm64" else HERE / platform
+    EVIDENCE_LOCK = OUTPUT / "evidence-lock.json"
+    INVENTORY = OUTPUT / "inventory.json"
+
+
+def components():
+    return sources.enumerate_components(platform=PLATFORM)
 
 # Obligation classes. "relink" is the LGPL clause-6 / LGPL-3 clause-4 duty that a
 # statically linked combined work must let the user replace the library.
@@ -54,13 +72,14 @@ def obligations(spdx, exceptions, linkage):
         return []
     duties = [NOTICE, LICENCE_TEXT]
     linking_exception = any(e.endswith("linking-exception") for e in exceptions)
+    runtime_exception = "GCC-exception-3.1" in exceptions
     if spdx in WEAK_COPYLEFT:
         duties.append(SOURCE)
     if spdx in LGPL:
         duties.append(SOURCE)
         if linkage == "static" and not linking_exception:
             duties.append(RELINK)
-    if spdx in STRONG_COPYLEFT:
+    if spdx in STRONG_COPYLEFT and not runtime_exception:
         duties.extend([SOURCE, RELINK])
     return duties
 
@@ -70,9 +89,10 @@ def load(path, default=None):
     return json.loads(path.read_text()) if path.exists() else default
 
 
-def store_evidence(group, key, name, raw):
+def store_evidence(group, key, name, raw, area=None):
     """Write one licence file under evidence/ and describe it."""
-    directory = EVIDENCE / group
+    area = area or group
+    directory = EVIDENCE / area
     directory.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", f"{key}__{name}")
     (directory / safe).write_bytes(raw)
@@ -80,7 +100,7 @@ def store_evidence(group, key, name, raw):
     spdx, exceptions = classify.identify(text)
     return {
         "file": name,
-        "path": f"evidence/{group}/{safe}",
+        "path": f"evidence/{area}/{safe}",
         "sha256": fetch.digest(raw),
         "bytes": len(raw),
         "role": "attribution" if fetch.ATTRIBUTION_ONLY.search(name) else "license",
@@ -106,7 +126,8 @@ def python_evidence(packages, cache):
                            "version": package["version"], "pinned_sha256": package["sha256"],
                            "actual_sha256": actual, "sha256_match": True,
                            "linkage": package["linkage"], "linkage_reason": package["linkage_reason"]},
-            "evidence": [store_evidence("python", f'{package["name"]}-{package["version"]}', name, data)
+            "evidence": [store_evidence("python", f'{package["name"]}-{package["version"]}', name, data,
+                                        None if PLATFORM == "macos-arm64" else "python-" + PLATFORM)
                          for name, data in sorted(found.items())],
         }
         print(f'  python/{package["name"]}: {len(found)} licence files', flush=True)
@@ -117,7 +138,7 @@ def collect_python(args):
     lock = load(EVIDENCE_LOCK)
     if lock is None or lock.get("schema_version") != 1:
         raise ValueError("Python-only refresh requires an existing evidence lock")
-    entries = python_evidence(sources.enumerate_components()["python_packages"], args.cache)
+    entries = python_evidence(components()["python_packages"], args.cache)
     previous = lock["components"]
     lock["components"] = {key: value for key, value in previous.items() if value["group"] != "python"}
     lock["components"].update(entries)
@@ -127,9 +148,16 @@ def collect_python(args):
 
 
 def collect(args):
-    components = sources.enumerate_components()
+    found_components = components()
     lock = {"schema_version": 1, "components": {}}
     cache = args.cache
+    shared = PLATFORM != "macos-arm64"
+    if shared:
+        base = load(HERE / "evidence-lock.json")
+        if base is None:
+            raise ValueError("collect the macOS evidence before another platform's")
+        lock["components"].update({key: value for key, value in base["components"].items()
+                                   if value["group"] in SHARED_GROUPS})
 
     def record(group, key, provenance, files, note=None):
         entry = {"group": group, "provenance": provenance, "evidence": files}
@@ -139,6 +167,19 @@ def collect(args):
         state = "no licence file" if not files else ", ".join(f["file"] for f in files)
         print(f"  {group}/{key}: {state}", flush=True)
 
+    components_ = found_components
+    if not shared:
+        collect_shared(components_, record, cache)
+    collect_platform(components_, record, cache, lock)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    EVIDENCE_LOCK.write_text(json.dumps(lock, indent=1, sort_keys=True) + "\n")
+    print(f"\nwrote {EVIDENCE_LOCK.relative_to(HERE.parent.parent)}: "
+          f'{len(lock["components"])} components')
+    return 0
+
+
+def collect_shared(components, record, cache):
+    """Evidence for the groups every platform shares: engine, parsers, grammars, OCaml."""
     print("engine and parser submodules")
     engine = components["engine"]
     repository = fetch.github_repository(engine["upstream"])
@@ -163,19 +204,6 @@ def collect(args):
                 "declared_license": grammar["license"]},
                [store_evidence("grammars", grammar["language"], n, r) for n, r in sorted(found.items())])
 
-    print("native libraries")
-    pinned = list(components["native_libraries"]) + [dict(components["tree_sitter"], name="tree-sitter")]
-    for library in pinned:
-        raw = fetch.download(library["url"], cache)
-        actual = fetch.digest(raw)
-        found = fetch.licences_from_archive(raw, library["url"])
-        record("native", library["name"],
-               {"url": library["url"], "version": library["version"],
-                "pinned_sha256": library["sha256"], "actual_sha256": actual,
-                "sha256_match": actual == library["sha256"]},
-               [store_evidence("native", f'{library["name"]}-{library["version"]}', n, r)
-                for n, r in sorted(found.items())])
-
     print("ocaml switch")
     for package in components["ocaml"]:
         key = f'{package["name"]}-{package["version"]}'
@@ -199,24 +227,52 @@ def collect(args):
                     homepage=package["homepage"]),
                [store_evidence("ocaml", key, n, r) for n, r in sorted(found.items())])
 
+
+def collect_platform(components, record, cache, lock):
+    """Evidence for what each platform builds itself: native libraries, the Python
+    runtime, and the Python distributions."""
+    print("native libraries")
+    pinned = list(components["native_libraries"]) + [dict(components["tree_sitter"], name="tree-sitter")]
+    for library in pinned:
+        raw = fetch.download(library["url"], cache)
+        actual = fetch.digest(raw)
+        found = fetch.licences_from_archive(raw, library["url"])
+        record("native", library["name"],
+               {"url": library["url"], "version": library["version"],
+                "pinned_sha256": library["sha256"], "actual_sha256": actual,
+                "sha256_match": actual == library["sha256"]},
+               [store_evidence("native", f'{library["name"]}-{library["version"]}', n, r)
+                for n, r in sorted(found.items())])
+
     print("python runtime and packages")
     runtime = components["python_runtime"]
-    record("python-runtime", "cpython",
-           {"url": runtime["url"], "version": runtime["version"], "sha256": runtime["sha256"],
-            "note": "licence text and embedded works are read from the expanded framework by "
-                    "verify-artifact; the installer is not unpacked here"}, [])
+    if PLATFORM == "macos-arm64":
+        record("python-runtime", "cpython",
+               {"url": runtime["url"], "version": runtime["version"], "sha256": runtime["sha256"],
+                "note": "licence text and embedded works are read from the expanded framework by "
+                        "verify-artifact; the installer is not unpacked here"}, [])
+    else:
+        # A source build: the licence comes from the pinned tarball itself.
+        raw = fetch.download(runtime["url"], cache)
+        actual = fetch.digest(raw)
+        found = fetch.licences_from_archive(raw, runtime["url"])
+        record("python-runtime", "cpython",
+               {"url": runtime["url"], "version": runtime["version"], "pinned_sha256": runtime["sha256"],
+                "actual_sha256": actual, "sha256_match": actual == runtime["sha256"]},
+               [store_evidence("python-runtime", "cpython-" + runtime["version"], n, r) for n, r in sorted(found.items())])
     lock["components"].update(python_evidence(components["python_packages"], cache))
-
-    EVIDENCE_LOCK.write_text(json.dumps(lock, indent=1, sort_keys=True) + "\n")
-    print(f"\nwrote {EVIDENCE_LOCK.relative_to(HERE.parent.parent)}: "
-          f'{len(lock["components"])} components')
-    return 0
 
 
 def determinations():
-    """Curated conclusions where a licence file alone does not settle the answer."""
+    """Curated conclusions where a licence file alone does not settle the answer. Another
+    platform keeps the shared conclusions and replaces the works bundled with its runtime."""
     document = load(HERE / "determinations.json", {})
-    return document.get("components", {}), document.get("extra_components", {})
+    curated, extra = document.get("components", {}), document.get("extra_components", {})
+    if PLATFORM != "macos-arm64":
+        own = load(OUTPUT / "determinations.json", {})
+        curated = dict(curated, **own.get("components", {}))
+        extra = own.get("extra_components", {})
+    return curated, extra
 
 
 def reread(entry):
@@ -269,7 +325,7 @@ def build(args):
         print("no evidence-lock.json; run `inventory.py collect` first", file=sys.stderr)
         return 1
     curated, extra = determinations()
-    components = []
+    rows = []
     for key, entry in sorted(lock["components"].items()):
         entry = reread(entry)
         licence = conclude(key, entry, curated)
@@ -280,7 +336,7 @@ def build(args):
         if curated.get(key, {}).get("spdx"):
             spdx = curated[key]["spdx"]
             exceptions = curated[key].get("exceptions", [])
-        components.append({
+        rows.append({
             "id": key,
             "group": entry["group"],
             "license": licence["expression"],
@@ -298,7 +354,7 @@ def build(args):
     # Works that ship inside another component rather than as their own pinned
     # input: the third-party libraries the Python framework carries.
     for key, entry in sorted(extra.items()):
-        components.append({
+        rows.append({
             "id": key, "group": key.split("/", 1)[0],
             "license": entry["license"], "license_basis": entry["basis"],
             "spdx": entry.get("spdx"), "exceptions": entry.get("exceptions", []),
@@ -309,12 +365,12 @@ def build(args):
             "provenance": entry.get("provenance", {}), "evidence": [],
             "copyright": [], "note": entry.get("note"),
         })
-    components.sort(key=lambda c: (c["group"], c["id"]))
-    document = {"schema_version": 1, "artifact": sources.enumerate_components()["engine"],
-                "components": components}
+    rows.sort(key=lambda c: (c["group"], c["id"]))
+    document = {"schema_version": 1, "artifact": dict(components()["engine"], platform=PLATFORM)
+                if PLATFORM != "macos-arm64" else components()["engine"], "components": rows}
     INVENTORY.write_text(json.dumps(document, indent=1, sort_keys=True) + "\n")
-    (HERE / "INVENTORY.md").write_text(render_inventory(document))
-    print(f"wrote inventory.json and INVENTORY.md: {len(components)} components")
+    (OUTPUT / "INVENTORY.md").write_text(render_inventory(document))
+    print(f"wrote inventory.json and INVENTORY.md: {len(rows)} components")
     return 0
 
 
@@ -365,7 +421,7 @@ def check(args):
         provenance = entry.get("provenance", {})
         if provenance.get("sha256_match") is False:
             failures.append(f"{key}: pinned source digest did not match on collection")
-    current = sources.enumerate_components()
+    current = components()
     expected = {f'ocaml/{p["name"]}-{p["version"]}' for p in current["ocaml"]}
     recorded = {k for k in lock["components"] if k.startswith("ocaml/")}
     for missing in sorted(expected - recorded):
@@ -431,7 +487,7 @@ def notices(args):
     out += ["# Licence texts", ""]
     for key in order:
         out += [f"## Licence text {key}", "", "```", texts[key], "```", ""]
-    (HERE / "NOTICES-opengrep.md").write_text("\n".join(out))
+    (OUTPUT / "NOTICES-opengrep.md").write_text("\n".join(out))
     print(f"wrote NOTICES-opengrep.md: {len(shipped)} shipped components")
     return 0
 
@@ -576,6 +632,8 @@ def verify_artifact(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--platform", choices=sorted(sources.PLATFORMS), default="macos-arm64",
+                        help="the released executable to describe (default: macos-arm64)")
     commands = parser.add_subparsers(dest="command", required=True)
     gather = commands.add_parser("collect")
     gather.add_argument("--cache", default=None, help="reuse downloaded archives from this directory")
@@ -590,6 +648,9 @@ def main():
     artifact.add_argument("path")
     artifact.set_defaults(handler=verify_artifact)
     args = parser.parse_args()
+    use_platform(args.platform)
+    if args.platform != "macos-arm64" and args.handler is retained_lock:
+        parser.error("the retained-source lock is engine-wide; derive it from the macOS inventory")
     return args.handler(args)
 
 

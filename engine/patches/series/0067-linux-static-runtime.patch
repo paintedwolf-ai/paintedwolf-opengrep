@@ -1,0 +1,18 @@
+diff --git a/src/main/flags.sh b/src/main/flags.sh
+--- a/src/main/flags.sh
++++ b/src/main/flags.sh
+@@ -84,11 +84,11 @@
+             CCLIB=("-lidn2" "-lunistring" "-lpsl" "-lssl" "-lcrypto" "-lz")
+             CCOPT=("-static" "-no-pie" "-Wl,-z,stack-size=8388608")
+         else
+-            # On non-Alpine Linux distros (e.g., Ubuntu), we just dynamically
+-            # link for dev. Note that Alpine is used for our Docker builds.
++            # glibc builds link the C++ and GCC runtimes statically, so the
++            # engine depends only on the system C library.
+             FLAGS=()
+             CCLIB=()
+-            CCOPT=()
++            CCOPT=("-static-libgcc" "-static-libstdc++")
+         fi
+         ;;
+     # In general, we want to statically link to make it easier to distribute

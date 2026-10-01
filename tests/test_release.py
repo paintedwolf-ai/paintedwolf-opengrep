@@ -31,6 +31,9 @@ class ReleaseTest(unittest.TestCase):
         (self.licensing / "inventory.json").write_text(json.dumps({"artifact": self.identity}))
         self.notices = b"# Third-party notices \xe2\x80\x94 opengrep 1.29.0+paintedwolf.26\n\nFixture notices.\n"
         (self.licensing / "NOTICES-opengrep.md").write_bytes(self.notices)
+        (self.licensing / "linux-amd64").mkdir()
+        (self.licensing / "linux-amd64/inventory.json").write_text(json.dumps({"artifact": dict(self.identity, platform="linux-amd64")}))
+        (self.licensing / "linux-amd64/NOTICES-opengrep.md").write_bytes(self.notices)
         self.set_retained_source({"artifact_version": self.identity["version"]})
         signing = RELEASE.ARTIFACT.signing_module()
         for patch in (mock.patch.object(RELEASE.ARTIFACT, "native_target", return_value=("darwin", "arm64")),
@@ -137,6 +140,34 @@ class ReleaseTest(unittest.TestCase):
             RELEASE.main()
         pack.assert_not_called()
         self.assertIn("release metadata verified", output.getvalue())
+
+    def test_linux_notices_must_describe_linux(self):
+        lock = self.fixture.lock | {"upstream_version": "1.29.0", "patch_version": 26}
+        self.assertEqual(RELEASE.release_notice_bytes(self.package, lock, "linux-amd64"), self.notices)
+        (self.licensing / "linux-amd64/inventory.json").write_text(json.dumps({"artifact": self.identity}))
+        with self.assertRaisesRegex(ValueError, "another platform"):
+            RELEASE.release_notice_bytes(self.package, lock, "linux-amd64")
+
+    def test_merge_lists_every_platform_and_checks_each_archive(self):
+        outputs = []
+        for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"), ("linux-amd64", "linux", "amd64")):
+            directory = self.fixture.root / ("out-" + platform)
+            directory.mkdir()
+            archive = directory / ("opengrep-1.29.0+paintedwolf.26-" + platform + ".tar.gz")
+            archive.write_bytes(platform.encode())
+            row = {"goos": goos, "goarch": goarch, "url": "https://example.test/" + archive.name,
+                   "sha256": RELEASE.ARTIFACT.digest(archive), "bytes": archive.stat().st_size}
+            (directory / "release.json").write_text(json.dumps({"opengrep": {"version": "1.29.0+paintedwolf.26", "artifacts": [row]}}))
+            outputs.append(directory)
+        metadata = RELEASE.merge(outputs, self.fixture.root / "merged")
+        self.assertEqual([(row["goos"], row["goarch"]) for row in metadata["opengrep"]["artifacts"]], [("darwin", "arm64"), ("linux", "amd64")])
+        self.assertEqual(sorted(p.name for p in (self.fixture.root / "merged").iterdir()),
+                         sorted(["release.json", "opengrep-1.29.0+paintedwolf.26-darwin-arm64.tar.gz", "opengrep-1.29.0+paintedwolf.26-linux-amd64.tar.gz"]))
+        next(outputs[1].glob("*.tar.gz")).write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "differs from its descriptor"):
+            RELEASE.merge(outputs, self.fixture.root / "merged-again")
+        with self.assertRaisesRegex(ValueError, "every released platform"):
+            RELEASE.merge(outputs[:1], self.fixture.root / "merged-once")
 
     def test_cli_rejects_ambiguous_or_incomplete_modes(self):
         cases = ([], ["--artifact", "artifact"],
