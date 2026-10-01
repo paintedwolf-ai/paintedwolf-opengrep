@@ -134,13 +134,17 @@ def ocaml_components(export_path, seeds):
     return components
 
 
-def enumerate_components(package=PACKAGE, engine_submodules=None):
-    """Every component of the maintained executable, grouped by kind."""
+# Released platforms: the runtime lock section and OCaml switch export each builds from.
+PLATFORMS = {"macos-arm64": "macos", "linux-amd64": "linux"}
+
+
+def enumerate_components(package=PACKAGE, engine_submodules=None, platform="macos-arm64"):
+    """Every component of one platform's maintained executable, grouped by kind."""
+    system = PLATFORMS[platform]
     lock = read_json(package / "source-lock.json")
     runtimes = read_json(package / "locks/runtimes.json")
     submodules = engine_submodules or read_json(LICENSING / "engine-submodules.json")
-    # The inventory describes the released macOS artifact, whatever host builds it.
-    distributions = python_distributions(package, "macos-arm64-cp313")
+    distributions = python_distributions(package, platform + "-cp313")
     python_packages = [dict(entry, linkage="bundled", linkage_reason="locked CLI runtime dependency")
                        for entry in distributions["runtime"]]
     python_packages.extend(dict(entry, linkage="build-only", linkage_reason="locked Python packaging bootstrap")
@@ -155,10 +159,10 @@ def enumerate_components(package=PACKAGE, engine_submodules=None):
         },
         "engine_submodules": submodules,
         "native_grammars": lock["grammars"],
-        "ocaml": ocaml_components(package / "locks/macos-arm64.opam.export",
+        "ocaml": ocaml_components(package / "locks" / (platform + ".opam.export"),
                                   engine_seeds(LICENSING / "engine-opam")),
-        "native_libraries": runtimes["macos"]["native_libraries"],
+        "native_libraries": runtimes[system]["native_libraries"],
         "tree_sitter": runtimes["tree_sitter"],
-        "python_runtime": runtimes["macos"]["python"],
+        "python_runtime": runtimes[system]["python"],
         "python_packages": python_packages,
     }

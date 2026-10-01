@@ -14,6 +14,13 @@ REPOSITORY = "paintedwolf-ai/paintedwolf-opengrep"
 REPOSITORY_ID = "1362758908"
 OWNER_ID = "289211278"
 WORKFLOW = ".github/workflows/native-release.yml"
+# Each released platform: the job that compiles it and the hosted runner it compiles on.
+PLATFORMS = {"darwin-arm64": {"job": "compile", "runner": ("macOS", "ARM64")},
+             "linux-amd64": {"job": "compile-linux", "runner": ("Linux", "X64")}}
+
+
+def evidence_name(platform):
+    return "build-evidence-" + platform + ".json"
 
 
 def require(condition, message):
@@ -78,26 +85,28 @@ def require_unpublished(identity):
             "This version already has a release or draft; existing assets will not be replaced")
 
 
-def build_evidence(handoff, identity, environment, tools):
-    require(environment.get("GITHUB_JOB") == "compile", "Build evidence must originate in the compile job")
+def build_evidence(handoff, identity, environment, tools, platform="darwin-arm64"):
+    job = PLATFORMS[platform]["job"]
+    require(environment.get("GITHUB_JOB") == job, "Build evidence must originate in the " + job + " job")
     for key in ("ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH"):
         require(bool(environment.get(key)), "Missing hosted image identity: " + key)
     require(tools and all(isinstance(value, str) and value.strip() for value in tools.values()),
             "Build tool versions are incomplete")
-    return {"schema_version": 1, "build": identity, "job": "compile", "reused_artifact": False,
+    return {"schema_version": 1, "build": identity, "job": job, "platform": platform, "reused_artifact": False,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "runner": {key: environment[key] for key in ("ImageOS", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH")},
             "tools": tools, "handoff": {"sha256": digest(handoff), "bytes": handoff.stat().st_size}}
 
 
-def check_evidence(evidence, identity, handoff=None):
+def check_evidence(evidence, identity, handoff=None, platform="darwin-arm64"):
+    expected = PLATFORMS[platform]
     require(type(evidence.get("schema_version")) is int and evidence["schema_version"] == 1
             and evidence.get("build") == identity,
             "Build evidence differs from this source and workflow execution")
-    require(evidence.get("job") == "compile" and evidence.get("reused_artifact") is False,
-            "Release requires a fresh native compile")
-    require(evidence.get("runner", {}).get("RUNNER_OS") == "macOS"
-            and evidence["runner"].get("RUNNER_ARCH") == "ARM64", "Build runner is not macOS arm64")
+    require(evidence.get("job") == expected["job"] and evidence.get("platform") == platform
+            and evidence.get("reused_artifact") is False, "Release requires a fresh native compile")
+    require((evidence.get("runner", {}).get("RUNNER_OS"), evidence["runner"].get("RUNNER_ARCH")) == expected["runner"],
+            "Build runner differs from the " + platform + " hosted runner")
     tools = evidence.get("tools")
     require(all(isinstance(evidence["runner"].get(key), str) and evidence["runner"][key]
                 for key in ("ImageOS", "ImageVersion"))
@@ -145,6 +154,24 @@ def verify_attestation(subject, bundle, identity):
     check_attestation(json.loads(output), identity, subject)
 
 
+def linux_tool_versions(build, image):
+    """Tool versions inside the compile image, which builds the Linux engine."""
+    inside = ["docker", "run", "--rm", "-v", f"{build}:{build}", "-e", "OPAMROOT=" + str(build / "opam"),
+              "-w", str(build / "engine"), image]
+    tools = {"compile_image": command(["docker", "image", "inspect", "--format", "{{.Id}}", image]),
+             "driver_python": command(["python3", "--version"]), "node": command(["node", "--version"]),
+             "git": command(["git", "--version"])}
+    for name, argv in {"gcc": ["gcc", "--version"], "glibc": ["ldd", "--version"], "opam": ["opam", "--version"],
+                       "os_release": ["cat", "/etc/os-release"]}.items():
+        tools[name] = command(inside + argv)
+    for name, arguments in (("ocaml", ["ocamlc", "-version"]), ("dune", ["dune", "--version"])):
+        tools[name] = command(inside + ["opam", "exec", "--", *arguments])
+    python = str(build / "python/bin/python")
+    tools["packaging_python"] = command(inside + [python, "--version"])
+    tools["nuitka"] = command(inside + [python, "-c", "import importlib.metadata; print(importlib.metadata.version('Nuitka'))"])
+    return tools
+
+
 def build_tool_versions(build):
     tools = {name: command(argv) for name, argv in {
         "driver_python": ["python3", "--version"], "clang": ["clang", "--version"],
@@ -169,9 +196,12 @@ def main():
     build.add_argument("--handoff", required=True, type=Path)
     build.add_argument("--build-directory", required=True, type=Path)
     build.add_argument("--output", required=True, type=Path)
+    build.add_argument("--platform", choices=sorted(PLATFORMS), default="darwin-arm64")
+    build.add_argument("--image", help="linux-amd64: the compile image the engine was built in")
     check = commands.add_parser("check-evidence")
     check.add_argument("--evidence", required=True, type=Path)
     check.add_argument("--handoff", type=Path)
+    check.add_argument("--platform", choices=sorted(PLATFORMS), default="darwin-arm64")
     args = parser.parse_args()
     identity = checked_identity()
     if args.operation in ("identity", "preflight"):
@@ -179,13 +209,18 @@ def main():
             require_unpublished(identity)
         result = identity
     elif args.operation == "build-evidence":
-        tools = build_tool_versions(args.build_directory.resolve(strict=True))
-        result = build_evidence(args.handoff, identity, os.environ, tools)
+        build = args.build_directory.resolve(strict=True)
+        if args.platform == "linux-amd64":
+            require(bool(args.image), "Linux build evidence names its compile image")
+            tools = linux_tool_versions(build, args.image)
+        else:
+            tools = build_tool_versions(build)
+        result = build_evidence(args.handoff, identity, os.environ, tools, args.platform)
         with args.output.open("x") as output:
             output.write(json.dumps(result, sort_keys=True, indent=2) + "\n")
         return
     else:
-        check_evidence(json.loads(args.evidence.read_text()), identity, args.handoff)
+        check_evidence(json.loads(args.evidence.read_text()), identity, args.handoff, args.platform)
         result = {"verified": True}
     print(json.dumps(result, sort_keys=True))
 

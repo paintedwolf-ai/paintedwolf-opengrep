@@ -595,6 +595,15 @@
         "contextual-taint-analysis"
       ],
       "contract": "Same-file callable dependency scheduling, complete module and helper entrypoints, and final-analysis diagnostic lifetimes"
+    },
+    {
+      "id": "linux-static-runtime",
+      "target": "engine",
+      "patch": "patches/series/0067-linux-static-runtime.patch",
+      "requires": [
+        "portable-build"
+      ],
+      "contract": "glibc Linux executables link the C++ and GCC runtimes statically and depend only on the system C library"
     }
   ],
   "added_sources": [

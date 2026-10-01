@@ -22,17 +22,21 @@ def release_files(directory, identity):
                           ("upstream_version", lock["upstream_version"]), ("revision", lock["patch_version"]),
                           ("base_revision", lock["revision"]), ("origin", "downstream"), ("license", "LGPL-2.1")):
         PROVENANCE.require(record.get(key) == expected, "Release descriptor identity differs: " + key)
-    name = "opengrep-" + identity["version"] + "-darwin-arm64.tar.gz"
-    archive = directory / name
-    expected = {"goos": "darwin", "goarch": "arm64", "sha256": PROVENANCE.digest(archive),
-                "bytes": archive.stat().st_size, "url": "https://github.com/" + PROVENANCE.REPOSITORY
-                + "/releases/download/" + identity["ref"].removeprefix("refs/tags/") + "/" + name}
-    PROVENANCE.require(record.get("artifacts") == [expected], "Release archive differs from descriptor")
-    evidence = directory / "build-evidence.json"
-    PROVENANCE.check_evidence(RELEASE.ARTIFACT.read_json(evidence), identity)
-    files = [archive, directory / "release.json", evidence, directory / "provenance.sigstore.json"]
+    archives, evidence, expected = [], [], []
+    for platform, (target, _) in sorted(RELEASE.PLATFORMS.items(), key=lambda item: item[1][0]):
+        name = "opengrep-" + identity["version"] + "-" + platform + ".tar.gz"
+        archive = directory / name
+        expected.append({"goos": target[0], "goarch": target[1], "sha256": PROVENANCE.digest(archive),
+                         "bytes": archive.stat().st_size, "url": "https://github.com/" + PROVENANCE.REPOSITORY
+                         + "/releases/download/" + identity["ref"].removeprefix("refs/tags/") + "/" + name})
+        record_path = directory / PROVENANCE.evidence_name(platform)
+        PROVENANCE.check_evidence(RELEASE.ARTIFACT.read_json(record_path), identity, platform=platform)
+        archives.append(archive)
+        evidence.append(record_path)
+    PROVENANCE.require(record.get("artifacts") == expected, "Release archives differ from descriptor")
+    files = [*archives, directory / "release.json", *evidence, directory / "provenance.sigstore.json"]
     PROVENANCE.require({path.name for path in directory.iterdir()} == {path.name for path in files},
-                       "Release directory must contain exactly the archive, descriptor, build evidence, and attestation")
+                       "Release directory must contain exactly the archives, descriptor, build evidence, and attestation")
     for path in files:
         RELEASE.ARTIFACT.regular(path)
     return files
@@ -59,10 +63,11 @@ def draft(directory, identity):
     tag = identity["ref"].removeprefix("refs/tags/")
     with tempfile.TemporaryDirectory(prefix="opengrep-draft-") as temporary:
         notes = Path(temporary) / "notes.md"
-        notes.write_text("Qualified Developer ID macOS arm64 engine.\n\nSource commit: " + identity["commit"]
+        notes.write_text("Qualified engines: Developer ID macOS arm64, and Linux amd64 on the glibc 2.35 baseline.\n\n"
+                         "Source commit: " + identity["commit"]
                          + "\nBuild run: https://github.com/" + PROVENANCE.REPOSITORY + "/actions/runs/"
                          + identity["run_id"] + "/attempts/" + identity["run_attempt"]
-                         + "\n\nArchive, release descriptor, and build evidence have GitHub-hosted provenance attestations."
+                         + "\n\nArchives, release descriptor, and build evidence have GitHub-hosted provenance attestations."
                          + " Confirm that immutable releases are enabled before publishing this complete draft.\n")
         subprocess.run(["gh", "release", "create", tag, "--repo", PROVENANCE.REPOSITORY, "--verify-tag", "--draft",
                         "--target", identity["commit"], "--title", tag, "--notes-file", str(notes),

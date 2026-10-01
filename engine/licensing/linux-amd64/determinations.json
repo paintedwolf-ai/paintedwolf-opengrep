@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "Works the Linux executable carries that are not pinned inputs of their own: the",
+    "system libraries Nuitka copies beside the extension modules that link them, from",
+    "the Ubuntu 22.04 compile image, and the GCC runtime linked into opengrep-core.",
+    "Each entry names the package it comes from; the platform report in the release",
+    "lists the exact images. Shared conclusions come from ../determinations.json."
+  ],
+  "components": {},
+  "extra_components": {
+    "python-runtime/openssl": {
+      "license": "Apache-2.0", "spdx": "Apache-2.0", "linkage": "bundled",
+      "basis": "libssl.so.3 and libcrypto.so.3 in the distribution come from Ubuntu 22.04's libssl3 package, OpenSSL 3.0.2",
+      "provenance": {"version": "3.0.2", "url": "https://github.com/openssl/openssl", "within": "ubuntu 22.04 libssl3"},
+      "note": "Reaches the executable whenever Nuitka follows the ssl import, which requests and urllib3 force."
+    },
+    "python-runtime/libffi": {
+      "license": "MIT", "spdx": "MIT", "linkage": "bundled",
+      "basis": "libffi.so.8 in the distribution comes from Ubuntu 22.04's libffi8 package, libffi 3.4.2",
+      "provenance": {"version": "3.4.2", "url": "https://github.com/libffi/libffi", "within": "ubuntu 22.04 libffi8"}
+    },
+    "python-runtime/xz": {
+      "license": "LicenseRef-public-domain", "spdx": "LicenseRef-public-domain", "linkage": "bundled",
+      "basis": "liblzma.so.5 in the distribution comes from Ubuntu 22.04's liblzma5 package, xz 5.2.5, whose liblzma is in the public domain",
+      "provenance": {"version": "5.2.5", "url": "https://tukaani.org/xz/", "within": "ubuntu 22.04 liblzma5"}
+    },
+    "python-runtime/bzip2": {
+      "license": "bzip2-1.0.6", "spdx": "bzip2-1.0.6", "linkage": "bundled",
+      "basis": "libbz2.so.1.0 in the distribution comes from Ubuntu 22.04's libbz2-1.0 package, bzip2 1.0.8",
+      "provenance": {"version": "1.0.8", "url": "https://sourceware.org/bzip2/", "within": "ubuntu 22.04 libbz2-1.0"}
+    },
+    "python-runtime/sqlite": {
+      "license": "SQLite-public-domain", "spdx": "SQLite-public-domain", "linkage": "bundled",
+      "basis": "libsqlite3.so.0 in the distribution comes from Ubuntu 22.04's libsqlite3-0 package, SQLite 3.37.2",
+      "provenance": {"version": "3.37.2", "url": "https://sqlite.org/", "within": "ubuntu 22.04 libsqlite3-0"},
+      "note": "peewee pulls sqlite3 into the import graph."
+    },
+    "python-runtime/libuuid": {
+      "license": "BSD-3-Clause", "spdx": "BSD-3-Clause", "linkage": "bundled",
+      "basis": "libuuid.so.1 in the distribution comes from Ubuntu 22.04's libuuid1 package, util-linux 2.37.2, whose libuuid is BSD-3-Clause",
+      "provenance": {"version": "2.37.2", "url": "https://github.com/util-linux/util-linux", "within": "ubuntu 22.04 libuuid1"}
+    },
+    "native/gcc-runtime": {
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1", "spdx": "GPL-3.0", "exceptions": ["GCC-exception-3.1"],
+      "linkage": "static",
+      "basis": "opengrep-core links libstdc++ and libgcc statically from Ubuntu 22.04's GCC 11; the GCC Runtime Library Exception lets the compiled engine carry them under its own terms",
+      "provenance": {"version": "11", "url": "https://gcc.gnu.org/", "within": "ubuntu 22.04 libstdc++-11-dev, libgcc-11-dev"}
+    }
+  }
+}

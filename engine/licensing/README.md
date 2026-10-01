@@ -37,6 +37,28 @@ conclusions without trusting the machine that collected them.
 | `locks/runtimes.json` | the private native C libraries and the Python runtime |
 | `locks/dependencies.json`, `locks/python.txt`, `locks/python-bootstrap.txt` | exact Python distribution bytes and runtime/build-only classification |
 
+## Platforms
+
+Each released executable has its own inventory and notices, since each
+carries a different Python runtime and bundled libraries. macOS arm64's live at
+the top of this directory; Linux amd64's live in [`linux-amd64/`](linux-amd64/).
+Every command takes `--platform`, which defaults to `macos-arm64`:
+
+```
+python3 inventory.py --platform linux-amd64 collect --cache <dir>
+python3 inventory.py --platform linux-amd64 build
+python3 inventory.py --platform linux-amd64 notices
+```
+
+The engine, parser, grammar, and OCaml evidence is the same for every platform,
+so a Linux collection reuses the macOS evidence for those groups and collects its
+own for the native libraries, CPython (from the pinned source tarball's licence
+files), and the Linux Python wheels. `linux-amd64/determinations.json` names the
+works the Linux executable carries without a pin of its own: the system libraries
+copied beside the Python extension modules, and the statically linked GCC
+runtime. The retained-source lock is engine-wide and derives from the macOS
+inventory.
+
 `engine-submodules.json` and `engine-opam/` are snapshots of the engine at
 `acf67b45`, committed so the enumeration runs without a clone. `inventory.py
 check` fails if the switch export and the evidence lock stop agreeing.

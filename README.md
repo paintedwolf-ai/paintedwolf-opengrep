@@ -29,28 +29,37 @@ must report the exact selected version before native qualification begins.
 ## Build and test
 
 Install Go 1.26.6 or newer for the pinned Task bootstrap and Python 3.9 or newer
-for tooling. Native builds currently require macOS arm64, Xcode command-line
-tools, Node.js 26.3.0, opam, and pkgconf (`brew install opam pkgconf`). Native
-libraries and the private Python runtime come from verified source/runtime pins.
-Linux packaging is next; Windows engine builds and execution are future work.
+for tooling. Native builds run on macOS arm64 and Linux amd64. macOS needs Xcode
+command-line tools, Node.js 26.3.0, opam, and pkgconf (`brew install opam
+pkgconf`). Native libraries and the private Python runtime come from verified
+source/runtime pins. Windows engine builds and execution are future work.
 
-### Linux development builds
+### Linux builds
 
-`engine/build.py` also builds on linux/amd64, for development candidates that
-Painted Wolf Code's development binaries accept through
-`LYCAON_OPENGREP_CANDIDATE`; it is not a qualified release path. The Linux build
-uses the same OCaml dependency lock, the Linux Python wheel set in
-`engine/locks/dependencies.json`, the system CPython 3.13, and the pinned
-native libraries built statically (`engine/locks/runtimes.json`, `linux`).
-`engine/linux/Dockerfile` is a build environment with everything it needs:
-Ubuntu 24.04 (the pinned grammar generator needs its glibc), Python 3.13, opam,
-Node, and the C toolchain.
+Linux engines run on glibc 2.35 and later (`engine/locks/runtimes.json`,
+`linux.glibc_max`). They build in two stages, because the pinned grammar
+generator needs a newer glibc than the engine may require:
+
+1. `--prepare-only` checks out and patches the engine and generates the native
+   grammars, on a host with glibc 2.39 or later.
+2. `--compile-prepared` checks that the prepared inputs still match the
+   checked-in package, then compiles in `engine/linux/Dockerfile`, Ubuntu 22.04.
+
+The compile builds the pinned native libraries and zlib statically, CPython
+from its pinned python.org source tarball, and links tree-sitter and the C++
+and GCC runtimes statically into `opengrep-core`. The launcher depends only on
+glibc, and every other library the distribution needs travels inside it with
+an `$ORIGIN` runpath. `runtime.py validate-linux` records that as
+`platform-checks.json` and fails the build otherwise.
 
 ```sh
-docker build -t opengrep-linux-build engine/linux
-docker run --rm -v "$PWD":/work/src -v "$PWD/.cache/linux":/work/out -w /work/src opengrep-linux-build \
-  python3 engine/build.py /work/out/native-work --jobs 8 --python python3.13
-# /work/out/native-work/artifact holds opengrep, provenance.json, source-lock.json, and contracts.jsonl
+docker build -t opengrep-linux-prepare -f engine/linux/prepare.Dockerfile engine/linux
+docker build -t opengrep-linux-compile engine/linux
+docker run --rm -v "$PWD":/work/src -v "$PWD/.cache/linux":/work/out -w /work/src opengrep-linux-prepare \
+  python3 engine/build.py /work/out/native-work --prepare-only --jobs 8
+docker run --rm -v "$PWD":/work/src -v "$PWD/.cache/linux":/work/out -w /work/src opengrep-linux-compile \
+  python3 engine/build.py /work/out/native-work --compile-prepared --jobs 8
+# /work/out/native-work/artifact holds the qualified development artifact
 ```
 
 Keep `build` out of the build directory's path: the contracts scan files under it,
@@ -119,9 +128,13 @@ do not inherit the scanner's default `build/` exclusion.
 ```
 
 Set `RELEASE_TAG` to `v` followed by the exact version in the finalized
-`engine/source-lock.json`; use a new, unpublished tag. Packaging verifies the
-artifact against a frozen input snapshot and checks the executable's native
-signature before producing a deterministic archive and `release.json`. It does
+`engine/source-lock.json`; use a new, unpublished tag. `--platform` selects
+`darwin-arm64` (the default) or `linux-amd64`. Packaging verifies the artifact
+against a frozen input snapshot and, on macOS, checks the executable's native
+signature before producing a deterministic archive and `release.json`. Linux
+engines carry no code signature; the release attestations bind their bytes.
+`--merge` combines the per-platform outputs into one release whose `release.json`
+lists every platform's archive. It does
 not rebuild, resign, commit, or publish anything. Output directories must be new.
 
 The archive has nine flat regular files: `opengrep`, `source-lock.json`,

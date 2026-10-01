@@ -35,6 +35,7 @@ FAMILIES = [
     ("ISC", "permission to use copy modify and distribute this software for any purpose with or without fee"),
     ("BSD-2-Clause", "redistributions in binary form must reproduce the above"),
     ("Unlicense", "this is free and unencumbered software released into the public domain"),
+    ("Zlib", "the origin of this software must not be misrepresented you must not claim that you wrote the original software"),
 ]
 
 

@@ -212,6 +212,8 @@ class BuildVersionTest(unittest.TestCase):
         # what the build reads back.
         (self.root / "runtime").mkdir()
         (self.root / "runtime/runtime.json").write_text(json.dumps({"python": "python", "environment": {}}))
+        (self.source / "cli").mkdir(exist_ok=True)
+        (self.source / "cli/platform-checks.json").write_text("{}")
         profile = SimpleNamespace(mode="adhoc", digest=lambda: "profile")
         for reported, success in (("1.30.0+paintedwolf.30\n", False),
                                   ("1.30.0+paintedwolf.32\n", True)):
@@ -222,11 +224,11 @@ class BuildVersionTest(unittest.TestCase):
                     mock.patch.object(BUILD.subprocess, "run") as commands, \
                     mock.patch.object(BUILD.subprocess, "check_output", return_value=reported):
                 if success:
-                    result = BUILD.build(self.root, package, self.source, self.lock, 2, "python", None, profile)
+                    result = BUILD.build(self.root, package, self.source, self.lock, 2, None, profile)
                     self.assertEqual(result["version"], reported.strip())
                 else:
                     with self.assertRaisesRegex(RuntimeError, "Built engine version mismatch"):
-                        BUILD.build(self.root, package, self.source, self.lock, 2, "python", None, profile)
+                        BUILD.build(self.root, package, self.source, self.lock, 2, None, profile)
                 contracts = [call for call in commands.call_args_list
                              if str(package / "verify.py") in call.args[0]]
                 self.assertEqual(len(contracts), int(success))
@@ -235,3 +237,36 @@ class BuildVersionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreparedInputsTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.package, self.snapshot = root / "package", root / "snapshot"
+        files = {"build.py": b"build", "locks/python.txt": b"pins"}
+        lock = {"files": {name: hashlib.sha256(raw).hexdigest() for name, raw in files.items()}}
+        for directory in (self.package, self.snapshot):
+            for name, raw in files.items():
+                (directory / name).parent.mkdir(parents=True, exist_ok=True)
+                (directory / name).write_bytes(raw)
+            (directory / "source-lock.json").write_text(json.dumps(lock))
+
+    def test_prepared_snapshot_is_accepted_with_cached_bytecode(self):
+        (self.snapshot / "build_support/__pycache__").mkdir(parents=True)
+        (self.snapshot / "build_support/__pycache__/runtime.cpython-312.pyc").write_bytes(b"bytecode")
+        self.assertIn("build.py", BUILD.check_prepared(self.package, self.snapshot)["files"])
+
+    def test_changed_extra_or_foreign_inputs_are_refused(self):
+        (self.snapshot / "locks/python.txt").write_bytes(b"changed")
+        with self.assertRaisesRegex(RuntimeError, "Prepared input changed"):
+            BUILD.check_prepared(self.package, self.snapshot)
+        (self.snapshot / "locks/python.txt").write_bytes(b"pins")
+        (self.snapshot / "extra.py").write_bytes(b"extra")
+        with self.assertRaisesRegex(RuntimeError, "locked inventory"):
+            BUILD.check_prepared(self.package, self.snapshot)
+        (self.snapshot / "extra.py").unlink()
+        (self.package / "source-lock.json").write_text("{}")
+        with self.assertRaisesRegex(RuntimeError, "another source revision"):
+            BUILD.check_prepared(self.package, self.snapshot)

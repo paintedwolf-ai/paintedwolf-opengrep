@@ -142,6 +142,26 @@ def snapshot_package(package, destination):
     return lock
 
 
+def check_prepared(package, snapshot):
+    """The lock of a snapshot another stage took, after checking it still holds exactly
+    the checked-in package: the same lock bytes and every locked file unchanged."""
+    lock_bytes = (snapshot / "source-lock.json").read_bytes()
+    if lock_bytes != (package / "source-lock.json").read_bytes():
+        raise RuntimeError("Prepared inputs come from another source revision")
+    lock = json.loads(lock_bytes)
+    # Bytecode the earlier stage's interpreter cached is not an input.
+    actual = {path.relative_to(snapshot).as_posix() for path in snapshot.rglob("*")
+              if (path.is_file() or path.is_symlink()) and "__pycache__" not in path.relative_to(snapshot).parts}
+    actual.discard("source-lock.json")
+    if actual != set(lock["files"]):
+        raise RuntimeError("Prepared inputs differ from the locked inventory")
+    for relative, expected in lock["files"].items():
+        path = snapshot / relative
+        if path.is_symlink() or digest(path) != expected:
+            raise RuntimeError(f"Prepared input changed: {relative}")
+    return lock
+
+
 def prepare(root, package, lock):
     dependencies = dependency_support(package)
     source = root / "engine"
@@ -192,7 +212,7 @@ def grammar_patch(package, grammar):
     return package / path
 
 
-def build(root, package, source, lock, jobs, python, signing, profile):
+def build(root, package, source, lock, jobs, signing, profile):
     if profile.mode != "adhoc":
         raise RuntimeError("Native compilation requires ad-hoc signing; use the isolated native release stages for Developer ID")
     dependencies = dependency_support(package)
@@ -209,23 +229,15 @@ def build(root, package, source, lock, jobs, python, signing, profile):
     dependencies.fetch_python(package, root / "dependencies")
     runtime_driver = package / "build_support/runtime.py"
     runtime_lock = package / "locks/runtimes.json"
-    if system == "macos":
-        if python is not None:
-            raise RuntimeError("macOS builds use the pinned private Python runtime")
-        runtime_root = root / "runtime"
-        run([sys.executable, str(runtime_driver), "macos", str(runtime_root), str(runtime_lock), "--jobs", str(jobs)], source, env)
-        runtime = json.loads((runtime_root / "runtime.json").read_text())
-        env.update(runtime["environment"])
-        python = runtime["python"]
-    else:
-        # Linux builds the same native libraries statically and uses the system CPython
-        # of the locked series.
-        runtime_root = root / "runtime"
-        run([sys.executable, str(runtime_driver), "linux", str(runtime_root), str(runtime_lock), "--jobs", str(jobs),
-             "--python", python or "python3.13"], source, env)
-        runtime = json.loads((runtime_root / "runtime.json").read_text())
-        env.update(runtime["environment"])
-        python = runtime["python"]
+    if system not in ("macos", "linux"):
+        raise RuntimeError(f"No pinned build runtime for {system}")
+    # Both platforms build the pinned native libraries and a pinned CPython: the
+    # macOS framework installer, or the Linux source tarball.
+    runtime_root = root / "runtime"
+    run([sys.executable, str(runtime_driver), system, str(runtime_root), str(runtime_lock), "--jobs", str(jobs)], source, env)
+    runtime = json.loads((runtime_root / "runtime.json").read_text())
+    env.update(runtime["environment"])
+    python = runtime["python"]
     dependencies.initialize_opam(root, source, env)
     run(["opam", "switch", "create", ".", "--empty", "--no-install", "-y"], source, env)
     run(["opam", "switch", "import", str(dependency_lock), "-y", "--assume-depexts"], source, env)
@@ -236,6 +248,9 @@ def build(root, package, source, lock, jobs, python, signing, profile):
     core = source / "cli/src/semgrep/bin/opengrep-core"
     shutil.copy2(source / "_build/default/src/main/Main.exe", core)
     core.chmod(0o755)
+    if system == "linux":
+        # The link records the build tree's library directories; the engine needs none.
+        run(["patchelf", "--remove-rpath", str(core)], source, env)
     venv = root / "python"
     run([python, "-m", "venv", str(venv)], source, env)
     py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -253,6 +268,10 @@ def build(root, package, source, lock, jobs, python, signing, profile):
     reported_version = subprocess.check_output([str(binary), "--version"], text=True, env=env).strip()
     validate_reported_version(reported_version, lock)
     signing_record = None
+    if system == "linux":
+        run([sys.executable, str(runtime_driver), "validate-linux", str(source / "cli"), str(runtime_lock),
+             "--extracted", str(root / "extraction-cache/opengrep" / build_id)], source, env)
+        shutil.copyfile(source / "cli/platform-checks.json", root / "platform-checks.json")
     if system == "macos":
         run([sys.executable, str(runtime_driver), "validate-macos", str(source / "cli"), str(runtime_lock)], source, env)
         shutil.copyfile(source / "cli/platform-checks.json", root / "platform-checks.json")
@@ -280,11 +299,14 @@ def main():
     parser.add_argument("directory", type=Path, nargs="?")
     parser.add_argument("--check", action="store_true", help="Verify the complete source inventory without building or using the network")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--compile-prepared", action="store_true",
+                        help="Compile a directory a --prepare-only run left, on another host")
     parser.add_argument("--jobs", type=int, default=2)
-    parser.add_argument("--python", help="Python interpreter for non-macOS builds")
     args = parser.parse_args()
+    if args.prepare_only and args.compile_prepared:
+        parser.error("--prepare-only and --compile-prepared are separate stages")
     if args.check:
-        if args.directory or args.prepare_only:
+        if args.directory or args.prepare_only or args.compile_prepared:
             parser.error("--check does not accept a build directory or --prepare-only")
         with tempfile.TemporaryDirectory(prefix="opengrep-source-check-") as temporary:
             snapshot_package(PACKAGE, Path(temporary) / "inputs")
@@ -298,28 +320,35 @@ def main():
     root = args.directory.resolve()
     if root.is_relative_to(PACKAGE):
         parser.error("build directory must be outside the source package")
-    if root.exists():
-        parser.error("build directory must not already exist")
-    root.mkdir(parents=True)
     package = root / "inputs"
-    lock = snapshot_package(PACKAGE, package)
+    source_archive = root / "opengrep-source.tar.gz"
+    if args.compile_prepared:
+        if not source_archive.is_file():
+            parser.error("--compile-prepared needs a directory a --prepare-only run completed")
+        lock = check_prepared(PACKAGE, package)
+        source = root / "engine"
+    else:
+        if root.exists():
+            parser.error("build directory must not already exist")
+        root.mkdir(parents=True)
+        lock = snapshot_package(PACKAGE, package)
     dependency_support(package).validate_opam_locks(package)
     spec = importlib.util.spec_from_file_location("opengrep_build_signing", package / "signing/signing.py")
     signing = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = signing
     spec.loader.exec_module(signing)
     profile = signing.SigningProfile.parse(None)
-    source = prepare(root, package, lock)
-    retained = root / "third-party"
-    run([sys.executable, str(package / "build_support/corresponding_source.py"), str(retained),
-         "--lock", str(package / "locks/corresponding-source.json")], root)
-    source_archive = root / "opengrep-source.tar.gz"
-    run([sys.executable, str(package / "build_support/source_archive.py"),
-         str(root), str(package), str(source_archive), "--retained", str(retained)], root)
+    if not args.compile_prepared:
+        source = prepare(root, package, lock)
+        retained = root / "third-party"
+        run([sys.executable, str(package / "build_support/corresponding_source.py"), str(retained),
+             "--lock", str(package / "locks/corresponding-source.json")], root)
+        run([sys.executable, str(package / "build_support/source_archive.py"),
+             str(root), str(package), str(source_archive), "--retained", str(retained)], root)
     if args.prepare_only:
         print(source)
         return
-    built = build(root, package, source, lock, args.jobs, args.python, signing, profile)
+    built = build(root, package, source, lock, args.jobs, signing, profile)
     binary = built["binary"]
     output = root / "artifact"
     output.mkdir()
