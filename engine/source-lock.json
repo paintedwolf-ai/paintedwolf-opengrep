@@ -83,7 +83,7 @@
     "build_support/onefile.py": "e0455d16328ec044787f0e182d382d846e66bc32f580f0d62ab5748f8ed30636",
     "build_support/runtime.py": "0d9b5efb6cd9d105507408a41a8451df42fa35cb432881e981429f3be295113f",
     "build_support/scanner_report.py": "6e7d03b631e0052a35eba1af3eb7439aba647249f88c98f05a75820f19d498f0",
-    "build_support/source_archive.py": "e991099ca4dc7df0f564299cda2dbd294f94ad72bab785bdc427773a4e7c4a27",
+    "build_support/source_archive.py": "f42cba42733e0b9a438e8796cf92ae77e10f03ff2f6c07a952a4dde496c166f8",
     "build_support/test_execution.py": "39c32b93754c2754486d059d3886e1811c15004ccf02958c6fc12ace7f8a20ca",
     "locks/corresponding-source.json": "77dbe1a70779a7ccaf75476cf7967d6c8282d45c4ae6f9795cd3a88054049007",
     "locks/dependencies.json": "a3a238a4d41f1a761b31747d245d5437b8b0a3b353278e23dea02759a9b48235",
