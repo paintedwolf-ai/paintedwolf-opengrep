@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import socket
@@ -18,7 +19,17 @@ import urllib.request
 
 
 MAX_DISTRIBUTION_BYTES = 512 * 1024 * 1024
-PYTHON_PLATFORM = "macos-arm64-cp313"
+def host_python_platform():
+    """The locked Python distribution set for this host: its OS, architecture, and the
+    CPython ABI the engine's private runtime or system interpreter provides."""
+    system = {"Darwin": "macos", "Linux": "linux"}.get(platform.system())
+    architecture = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine())
+    if system is None or architecture is None:
+        raise ValueError(f"No locked Python distributions for {platform.system()}/{platform.machine()}")
+    return f"{system}-{architecture}-cp313"
+
+
+PYTHON_PLATFORM = host_python_platform()
 DOWNLOAD_ATTEMPTS = 3
 RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 
@@ -29,15 +40,21 @@ def requirements(path):
     for line in Path(path).read_text().splitlines():
         if not line.strip() or line.startswith("#"):
             continue
-        match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+-]+) --hash=sha256:([a-f0-9]{64})", line)
+        # One hash per platform wheel, in pip's own syntax; pip accepts a file whose
+        # hashes include the installed wheel's.
+        match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+-]+)((?: --hash=sha256:[a-f0-9]{64})+)", line)
         if match is None:
             raise ValueError(f"Unhashed or malformed Python requirement in {path}")
-        name, version, digest = match.groups()
+        name, version, hashes = match.groups()
+        digests = re.findall(r"sha256:([a-f0-9]{64})", hashes)
+        if len(set(digests)) != len(digests):
+            raise ValueError(f"Duplicate hash in Python requirement {name}")
+        digest = digests[0]
         canonical = re.sub(r"[-_.]+", "-", name).lower()
         if canonical in names:
             raise ValueError(f"Duplicate Python requirement: {name}")
         names.add(canonical)
-        result.append({"name": name, "version": version, "sha256": digest})
+        result.append({"name": name, "version": version, "sha256": digest, "sha256s": digests})
     if not result:
         raise ValueError(f"Empty Python requirements: {path}")
     return result
@@ -56,8 +73,9 @@ def python_distributions(package, platform=PYTHON_PLATFORM):
         raise ValueError(f"No locked Python distributions for {platform}")
     for group, filename in (("bootstrap", "python-bootstrap.txt"), ("runtime", "python.txt")):
         expected = requirements(package / "locks" / filename)
-        actual = [{key: entry[key] for key in ("name", "version", "sha256")} for entry in spec[group]]
-        if actual != expected:
+        actual = spec[group]
+        if len(actual) != len(expected) or any(
+                a["name"] != e["name"] or a["version"] != e["version"] or a["sha256"] not in e["sha256s"] for a, e in zip(actual, expected)):
             raise ValueError(f"Python distribution lock disagrees with {filename}")
     return spec
 

@@ -139,7 +139,8 @@ def enumerate_components(package=PACKAGE, engine_submodules=None):
     lock = read_json(package / "source-lock.json")
     runtimes = read_json(package / "locks/runtimes.json")
     submodules = engine_submodules or read_json(LICENSING / "engine-submodules.json")
-    distributions = python_distributions(package)
+    # The inventory describes the released macOS artifact, whatever host builds it.
+    distributions = python_distributions(package, "macos-arm64-cp313")
     python_packages = [dict(entry, linkage="bundled", linkage_reason="locked CLI runtime dependency")
                        for entry in distributions["runtime"]]
     python_packages.extend(dict(entry, linkage="build-only", linkage_reason="locked Python packaging bootstrap")

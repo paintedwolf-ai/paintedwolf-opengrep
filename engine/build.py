@@ -218,7 +218,14 @@ def build(root, package, source, lock, jobs, python, signing, profile):
         env.update(runtime["environment"])
         python = runtime["python"]
     else:
-        python = python or "python3.13"
+        # Linux builds the same native libraries statically and uses the system CPython
+        # of the locked series.
+        runtime_root = root / "runtime"
+        run([sys.executable, str(runtime_driver), "linux", str(runtime_root), str(runtime_lock), "--jobs", str(jobs),
+             "--python", python or "python3.13"], source, env)
+        runtime = json.loads((runtime_root / "runtime.json").read_text())
+        env.update(runtime["environment"])
+        python = runtime["python"]
     dependencies.initialize_opam(root, source, env)
     run(["opam", "switch", "create", ".", "--empty", "--no-install", "-y"], source, env)
     run(["opam", "switch", "import", str(dependency_lock), "-y", "--assume-depexts"], source, env)

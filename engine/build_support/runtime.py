@@ -42,11 +42,16 @@ def download(spec, destination):
 
 
 def native_libraries(root, spec, jobs):
+    """Build the pinned native libraries statically under root/prefix. A macOS spec names
+    a deployment target the compiler flags carry; a Linux spec builds with plain -O2."""
     prefix = root / "prefix"
-    target = spec["deployment_target"]
-    flags = "-O2 -mmacosx-version-min=" + target
-    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET=target, CFLAGS=flags, CXXFLAGS=flags,
-               LDFLAGS="-mmacosx-version-min=" + target)
+    target = spec.get("deployment_target")
+    if target:
+        flags = "-O2 -mmacosx-version-min=" + target
+        env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET=target, CFLAGS=flags, CXXFLAGS=flags,
+                   LDFLAGS="-mmacosx-version-min=" + target)
+    else:
+        env = dict(os.environ, CFLAGS="-O2 -fPIC", CXXFLAGS="-O2 -fPIC")
     records = []
     for library in spec["native_libraries"]:
         name = library["name"] + "-" + library["version"]
@@ -228,12 +233,31 @@ def validate_macos(root, target):
     (root / "platform-checks.json").write_text(json.dumps({"deployment_target": target, "images": records}, indent=2) + "\n")
 
 
+def linux(root, spec, jobs, python):
+    """The Linux runtime: the same native libraries built statically, and the system
+    CPython the lock's series names, checked for version and ssl."""
+    if not python:
+        raise RuntimeError("linux runtime needs --python")
+    root.mkdir()
+    prefix, native = native_libraries(root, spec, jobs)
+    series = spec["python"]["series"]
+    run([python, "-c", "import ssl,sys; assert '.'.join(map(str,sys.version_info[:2])) == " + repr(series)])
+    env = {"CPPFLAGS": "-I" + str(prefix / "include"), "LDFLAGS": "-L" + str(prefix / "lib"),
+           "PKG_CONFIG_PATH": str(prefix / "lib/pkgconfig"), "PKG_CONFIG_LIBDIR": str(prefix / "lib/pkgconfig") + ":/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig",
+           "LIBRARY_PATH": str(prefix / "lib"), "C_INCLUDE_PATH": str(prefix / "include"),
+           "SEMGREP_LIBEV_ARCHIVE_PATH": str(prefix / "lib/libev.a")}
+    version = subprocess.check_output([python, "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"], text=True).strip()
+    (root / "runtime.json").write_text(json.dumps({"python": shutil.which(python) or python, "environment": env, "native": native,
+                                                  "python_runtime": {"version": version, "series": series, "source": "system"}}, indent=2) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("macos", "tree-sitter", "validate-macos"))
+    parser.add_argument("mode", choices=("macos", "linux", "tree-sitter", "validate-macos"))
     parser.add_argument("root", type=Path)
     parser.add_argument("lock", type=Path)
     parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument("--python", help="linux: the system CPython the engine is built with")
     args = parser.parse_args()
     if not 1 <= args.jobs <= 16:
         parser.error("jobs must be between 1 and 16")
@@ -244,6 +268,9 @@ def main():
         return
     if args.mode == "tree-sitter":
         tree_sitter(root, lock["tree_sitter"])
+        return
+    if args.mode == "linux":
+        linux(root, lock["linux"], args.jobs, args.python)
         return
     root.mkdir()
     spec = lock["macos"]

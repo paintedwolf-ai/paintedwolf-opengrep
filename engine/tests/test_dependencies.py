@@ -221,6 +221,34 @@ class PythonDependencyTest(unittest.TestCase):
         for entry in spec["runtime"] + spec["bootstrap"]:
             self.assertTrue(entry["url"].startswith("https://files.pythonhosted.org/"))
 
+    def test_each_host_reads_its_own_locked_wheel_set(self):
+        for system, machine, expected in (("Darwin", "arm64", "macos-arm64-cp313"), ("Linux", "x86_64", "linux-amd64-cp313")):
+            with self.subTest(system=system), mock.patch.object(DEPS.platform, "system", return_value=system), \
+                    mock.patch.object(DEPS.platform, "machine", return_value=machine):
+                self.assertEqual(DEPS.host_python_platform(), expected)
+                spec = DEPS.python_distributions(PACKAGE, expected)
+                self.assertEqual(len(spec["runtime"]), 38)
+        with mock.patch.object(DEPS.platform, "system", return_value="Windows"), self.assertRaises(ValueError):
+            DEPS.host_python_platform()
+
+    def test_platform_wheels_share_a_requirement_with_one_hash_each(self):
+        linux = DEPS.python_distributions(PACKAGE, "linux-amd64-cp313")
+        macos = DEPS.python_distributions(PACKAGE, "macos-arm64-cp313")
+        for a, b in zip(linux["runtime"], macos["runtime"]):
+            self.assertEqual((a["name"], a["version"]), (b["name"], b["version"]))
+            if "none-any" not in a["filename"] and not a["filename"].endswith(".tar.gz"):
+                self.assertIn("manylinux", a["filename"])
+                self.assertNotEqual(a["sha256"], b["sha256"])
+
+    def test_a_requirement_rejects_a_repeated_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "requirements.txt"
+            path.write_text("package==1.0 --hash=sha256:" + "a" * 64 + " --hash=sha256:" + "a" * 64 + "\n")
+            with self.assertRaisesRegex(ValueError, "Duplicate hash"):
+                DEPS.requirements(path)
+            path.write_text("package==1.0 --hash=sha256:" + "a" * 64 + " --hash=sha256:" + "b" * 64 + "\n")
+            self.assertEqual(DEPS.requirements(path)[0]["sha256s"], ["a" * 64, "b" * 64])
+
     def test_lock_drift_rejects_installation(self):
         lock = DEPS.read_lock(PACKAGE)
         lock["python"][DEPS.PYTHON_PLATFORM]["runtime"][0]["sha256"] = "0" * 64

@@ -208,6 +208,10 @@ class BuildVersionTest(unittest.TestCase):
         compiled.parent.mkdir(parents=True)
         compiled.write_bytes(b"native core")
         (self.source / "cli/src/semgrep/bin").mkdir()
+        # The Linux runtime driver is stubbed with every other command; its record is
+        # what the build reads back.
+        (self.root / "runtime").mkdir()
+        (self.root / "runtime/runtime.json").write_text(json.dumps({"python": "python", "environment": {}}))
         profile = SimpleNamespace(mode="adhoc", digest=lambda: "profile")
         for reported, success in (("1.30.0+paintedwolf.30\n", False),
                                   ("1.30.0+paintedwolf.32\n", True)):

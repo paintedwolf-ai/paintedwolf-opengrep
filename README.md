@@ -34,6 +34,28 @@ tools, Node.js 26.3.0, opam, and pkgconf (`brew install opam pkgconf`). Native
 libraries and the private Python runtime come from verified source/runtime pins.
 Linux packaging is next; Windows engine builds and execution are future work.
 
+### Linux development builds
+
+`engine/build.py` also builds on linux/amd64, for development candidates that
+Painted Wolf Code's development binaries accept through
+`LYCAON_OPENGREP_CANDIDATE`; it is not a qualified release path. The Linux build
+uses the same OCaml dependency lock, the Linux Python wheel set in
+`engine/locks/dependencies.json`, the system CPython 3.13, and the pinned
+native libraries built statically (`engine/locks/runtimes.json`, `linux`).
+`engine/linux/Dockerfile` is a build environment with everything it needs:
+Ubuntu 24.04 (the pinned grammar generator needs its glibc), Python 3.13, opam,
+Node, and the C toolchain.
+
+```sh
+docker build -t opengrep-linux-build engine/linux
+docker run --rm -v "$PWD":/work/src -v "$PWD/.cache/linux":/work/out -w /work/src opengrep-linux-build \
+  python3 engine/build.py /work/out/native-work --jobs 8 --python python3.13
+# /work/out/native-work/artifact holds opengrep, provenance.json, source-lock.json, and contracts.jsonl
+```
+
+Keep `build` out of the build directory's path: the contracts scan files under it,
+and the engine's default ignore list skips any `build` directory.
+
 ```sh
 ./task check
 ./task test
