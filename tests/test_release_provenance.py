@@ -164,7 +164,7 @@ class ProvenanceTest(unittest.TestCase):
         (self.root / "engine").mkdir()
         (self.root / "engine/source-lock.json").write_text(json.dumps(self.lock))
         artifacts = []
-        for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"),):
+        for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"), ("linux-amd64", "linux", "amd64")):
             archive = directory / ("opengrep-" + self.identity["version"] + "-" + platform + ".tar.gz")
             archive.write_bytes(b"already qualified archive for " + platform.encode())
             artifacts.append({"goos": goos, "goarch": goarch, "sha256": PROVENANCE.digest(archive), "bytes": archive.stat().st_size,
@@ -175,13 +175,14 @@ class ProvenanceTest(unittest.TestCase):
             "base_revision": self.lock["revision"], "origin": "downstream", "license": "LGPL-2.1", "artifacts": artifacts}}
         (directory / "release.json").write_text(json.dumps(metadata))
         (directory / PROVENANCE.evidence_name("darwin-arm64")).write_text(json.dumps(self.evidence))
+        (directory / PROVENANCE.evidence_name("linux-amd64")).write_text(json.dumps(self.linux_evidence))
         (directory / "provenance.sigstore.json").write_text("verified by cryptographic verifier")
         return directory
 
     def test_promotion_rejects_changed_and_extra_assets_before_upload(self):
         directory = self.release_directory()
         with mock.patch.object(PROVENANCE, "ROOT", self.root):
-            self.assertEqual(len(PROMOTE.release_files(directory, self.identity)), 4)
+            self.assertEqual(len(PROMOTE.release_files(directory, self.identity)), 6)
             (directory / "unexpected.txt").write_text("extra payload")
             with self.assertRaisesRegex(ValueError, "exactly the archives"):
                 PROMOTE.release_files(directory, self.identity)
@@ -214,7 +215,7 @@ class ProvenanceTest(unittest.TestCase):
         state = json.loads(state_path.read_text())
         self.assertTrue(state["created"])
         self.assertEqual([arguments[:2] for arguments in state["calls"]], [
-            ["attestation", "verify"]] * 3 + [["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
+            ["attestation", "verify"]] * 5 + [["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
 
     def test_linux_evidence_binds_its_own_job_and_runner(self):
         PROVENANCE.check_evidence(self.linux_evidence, self.identity, self.handoff, "linux-amd64")
