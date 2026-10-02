@@ -14,8 +14,8 @@ Keep the repository independent of Painted Wolf Code. It owns the maintained
 engine, contracts, build inputs, source retention, and release artifacts. Product
 rules and scanner presentation belong to the consuming application.
 
-macOS arm64 is the current native build target. Linux is next; Windows engine
-builds and execution are future work. Do not invent unsupported platform assets.
+Releases carry macOS arm64 and Linux amd64 engines; Windows engine builds and
+execution are future work. Do not invent unsupported platform assets.
 
 Never remove another agent's work, stash the shared tree, or stop a process you
 did not start. Commit or publish only when explicitly authorized. Validate the

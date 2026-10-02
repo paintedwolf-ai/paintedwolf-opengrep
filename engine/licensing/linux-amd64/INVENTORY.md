@@ -1,4 +1,4 @@
-# Inventory — opengrep 1.30.0+paintedwolf.38
+# Inventory — opengrep 1.30.0+paintedwolf.39
 
 Upstream `https://github.com/opengrep/opengrep.git` at `acf67b45c97c4b63626536605c77064ef536806d`.
 

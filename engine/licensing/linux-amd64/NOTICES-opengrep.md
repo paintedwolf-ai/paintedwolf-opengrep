@@ -1,4 +1,4 @@
-# Third-party notices — opengrep 1.30.0+paintedwolf.38
+# Third-party notices — opengrep 1.30.0+paintedwolf.39
 
 This scanner engine is a single executable that combines the works below.
 Its corresponding source is distributed with the application; see

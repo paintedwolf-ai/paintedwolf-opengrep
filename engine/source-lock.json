@@ -2,7 +2,7 @@
   "upstream": "https://github.com/opengrep/opengrep.git",
   "revision": "acf67b45c97c4b63626536605c77064ef536806d",
   "upstream_version": "1.30.0",
-  "patch_version": 38,
+  "patch_version": 39,
   "interfaces_revision": "5e705660dc7381d4c4c247fa83c4c5860e61d555",
   "grammars": [
     {
@@ -85,7 +85,7 @@
     "build_support/scanner_report.py": "6e7d03b631e0052a35eba1af3eb7439aba647249f88c98f05a75820f19d498f0",
     "build_support/source_archive.py": "f42cba42733e0b9a438e8796cf92ae77e10f03ff2f6c07a952a4dde496c166f8",
     "build_support/test_execution.py": "39c32b93754c2754486d059d3886e1811c15004ccf02958c6fc12ace7f8a20ca",
-    "locks/corresponding-source.json": "81222a0ef8e9158f71e31a74f2f90088620bc867de0df7517a978a29a0c22aec",
+    "locks/corresponding-source.json": "3713f7fc1f6831cf16ea9452f3b6ffa70fcf5f2eb14c29f5f7d31363c2226804",
     "locks/dependencies.json": "a3a238a4d41f1a761b31747d245d5437b8b0a3b353278e23dea02759a9b48235",
     "locks/linux-amd64.opam.export": "65dc842cfdf2503f7ef9a461c92cfb21bdc439f13869c7e4ef64a15586b96f0e",
     "locks/macos-arm64.opam.export": "65dc842cfdf2503f7ef9a461c92cfb21bdc439f13869c7e4ef64a15586b96f0e",
