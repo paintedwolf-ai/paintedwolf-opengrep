@@ -154,7 +154,8 @@ entitlements on every native image. Certificate rotation is a reviewed policy
 change followed by a new engine revision. Developer ID signing does not itself
 claim Apple notarization; Painted Wolf Code notarizes its complete application.
 
-The manual `Native release` workflow uses fresh GitHub-hosted macOS arm64 runners.
+The manual `Native release` workflow builds the macOS arm64 engine on fresh
+GitHub-hosted macOS runners and the Linux amd64 engine on fresh Ubuntu runners.
 Run it at the exact version tag on a commit already reachable from `main`, with no
 existing release or draft:
 
@@ -175,6 +176,10 @@ before building. Its isolated stages are:
    frozen contract against the final executable, and regenerate qualification facts.
 6. In the protected `release` environment, verify the artifact again, attest the
    archive, descriptor and build evidence, and create a complete draft.
+
+The Linux engine compiles in the pinned `engine/linux/Dockerfile` container and is
+verified on a fresh runner against the glibc baseline; it carries no code signature.
+The release job combines both platforms' verified outputs into one draft.
 
 Jobs exchange bounded, digest-checked handoffs through immutable Actions artifact
 IDs from the same run and attempt. No completed engine cache is reused for a
@@ -216,8 +221,9 @@ requires a build performance fix or an explicitly redesigned pipeline, not a
 locally built substitute with a new hosted-build attestation.
 
 Publish the reviewed draft only after the exact signed artifact passes its frozen
-contracts and payload verification. The draft must contain exactly the archive,
-`release.json`, `build-evidence.json`, and `provenance.sigstore.json`. Immutable
+contracts and payload verification. The draft must contain exactly one archive
+and one `build-evidence-<platform>.json` per platform, `release.json`, and
+`provenance.sigstore.json`. Immutable
 releases must be enabled **before** publication. GitHub creates a separate release
 attestation when the draft is published; new consumer selection verifies both the
 workflow provenance and immutable-release membership.
@@ -235,9 +241,8 @@ which the workflow token does not have. Draft creation needs only release and
 attestation permissions; consumer selection verifies the published release's
 actual immutable state.
 
-Portable CI checks packaging only and does
-not claim Linux engine support. A Linux development replay can exercise semantics
-without qualifying the macOS release's executable, signing, or deployment target.
+Portable CI checks packaging only; the native release workflow qualifies each
+platform's engine.
 
 ## GitHub release controls
 
