@@ -292,6 +292,14 @@ sink. Recursive calls need a valid summary or an explicit limitation when bounde
 contextual analysis cannot continue. Preliminary summary construction must not
 leak provisional limits into an otherwise complete final analysis.
 
+## Contributions
+
+Sign off human-authored contributions with `git commit -s`. The final trailer
+block must include a `Signed-off-by` matching the author or committer name and
+email. The pinned [Painted Wolf DCO checker](https://github.com/paintedwolf-ai/dco-checker)
+certifies original PR commits through `DCO-owned`; `DCO audit` records the
+checked commits and any merge-commit or GitHub bot exemptions.
+
 ## Licensing
 
 The engine retains its upstream [LGPL-2.1 license](LICENSE). Bundled dependency
