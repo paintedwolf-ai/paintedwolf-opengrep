@@ -85,7 +85,7 @@
     "build_support/scanner_report.py": "6e7d03b631e0052a35eba1af3eb7439aba647249f88c98f05a75820f19d498f0",
     "build_support/source_archive.py": "f42cba42733e0b9a438e8796cf92ae77e10f03ff2f6c07a952a4dde496c166f8",
     "build_support/test_execution.py": "39c32b93754c2754486d059d3886e1811c15004ccf02958c6fc12ace7f8a20ca",
-    "locks/corresponding-source.json": "3713f7fc1f6831cf16ea9452f3b6ffa70fcf5f2eb14c29f5f7d31363c2226804",
+    "locks/corresponding-source.json": "cb64a7a28e4b525ce7c2509796dd24fd8fbfb6e2ea22679a2f64e01df44b7f24",
     "locks/dependencies.json": "f9b96f8dcdda7eb575a4c1841f6e85ba3dc78e63f4bc0ce555208be79bbe6e52",
     "locks/linux-amd64.opam.export": "65dc842cfdf2503f7ef9a461c92cfb21bdc439f13869c7e4ef64a15586b96f0e",
     "locks/linux-arm64.opam.export": "65dc842cfdf2503f7ef9a461c92cfb21bdc439f13869c7e4ef64a15586b96f0e",
