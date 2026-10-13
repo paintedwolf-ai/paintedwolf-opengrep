@@ -215,17 +215,22 @@ class LinuxImageTest(unittest.TestCase):
             path.write_bytes(elf_image(**facts))
         return dist
 
-    def report(self, core=None, launcher=None):
+    SPEC = {"glibc_max": "2.35", "targets": {
+        "amd64": {"machine": "x86_64", "cpu": "x86-64", "loader": "ld-linux-x86-64.so.2"},
+        "arm64": {"machine": "aarch64", "cpu": "armv8-a", "loader": "ld-linux-aarch64.so.1"}}}
+
+    def report(self, core=None, launcher=None, machine="x86_64"):
         cli = self.root / "cli"
         self.distribution(cli, core)
         extracted = self.distribution(self.root / "cache", core)
         (cli / "opengrep").write_bytes(elf_image(**(launcher or {"needed": ("libc.so.6",), "glibc": ("2.34",)})))
-        with patch.object(RUNTIME.platform, "machine", return_value="x86_64"):
-            return RUNTIME.validate_linux(cli, extracted, "2.35")
+        with patch.object(RUNTIME.platform, "machine", return_value=machine):
+            return RUNTIME.validate_linux(cli, extracted, self.SPEC)
 
     def test_report_binds_launcher_and_payload(self):
         report = self.report()
         self.assertEqual((report["platform"], report["architecture"], report["glibc_max"]), ("linux", "amd64", "2.35"))
+        self.assertEqual((report["cpu"], report["loader"]), ("x86-64", "ld-linux-x86-64.so.2"))
         self.assertEqual(report["outer"]["path"], "opengrep")
         self.assertEqual([image["path"] for image in report["standalone"]],
                          ["_ssl.so", "libssl.so.3", "opengrep.bin", "semgrep/bin/opengrep-core"])
@@ -244,3 +249,28 @@ class LinuxImageTest(unittest.TestCase):
     def test_launcher_depends_only_on_glibc(self):
         with self.assertRaisesRegex(RuntimeError, "outside glibc"):
             self.report(launcher={"needed": ("libz.so.1", "libc.so.6")})
+
+    def test_launcher_takes_only_its_own_architectures_loader(self):
+        report = self.report(launcher={"needed": ("ld-linux-x86-64.so.2", "libc.so.6"), "glibc": ("2.34",)})
+        self.assertEqual(report["outer"]["dependencies"], ["ld-linux-x86-64.so.2", "libc.so.6"])
+        for path in list(self.root.iterdir()):
+            __import__("shutil").rmtree(path)
+        with self.assertRaisesRegex(RuntimeError, "outside glibc"):
+            self.report(launcher={"needed": ("ld-linux-aarch64.so.1", "libc.so.6"), "glibc": ("2.34",)})
+
+    def test_target_declaration_names_the_building_machine(self):
+        self.assertEqual(RUNTIME.linux_target(self.SPEC, "aarch64"),
+                         ("arm64", {"machine": "aarch64", "cpu": "armv8-a", "loader": "ld-linux-aarch64.so.1"}))
+        with self.assertRaises(KeyError):
+            RUNTIME.linux_target(self.SPEC, "riscv64")
+        mismatched = {"targets": {"amd64": {"machine": "aarch64", "cpu": "x86-64", "loader": "ld-linux-x86-64.so.2"}}}
+        with self.assertRaisesRegex(RuntimeError, "another machine"):
+            RUNTIME.linux_target(mismatched, "x86_64")
+
+    def test_compiler_target_reads_the_default_cpu(self):
+        outputs = ["aarch64-linux-gnu\n", "  -march=                     \t\tarmv8-a\n  -mcpu=                      \t\tgeneric\n"]
+        with patch.object(RUNTIME.subprocess, "check_output", side_effect=outputs):
+            self.assertEqual(RUNTIME.compiler_target(), {"machine": "aarch64-linux-gnu", "cpu": "armv8-a"})
+        with patch.object(RUNTIME.subprocess, "check_output", side_effect=["x86_64-linux-gnu\n", "  -mtune=  generic\n"]), \
+                self.assertRaisesRegex(RuntimeError, "default CPU"):
+            RUNTIME.compiler_target()

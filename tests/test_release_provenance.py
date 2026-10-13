@@ -43,6 +43,8 @@ class ProvenanceTest(unittest.TestCase):
         self.evidence = PROVENANCE.build_evidence(self.handoff, self.identity, self.environment, {"clang": "Apple clang 17"})
         linux = dict(self.environment, GITHUB_JOB="compile-linux", ImageOS="ubuntu24", RUNNER_OS="Linux", RUNNER_ARCH="X64")
         self.linux_evidence = PROVENANCE.build_evidence(self.handoff, self.identity, linux, {"gcc": "gcc 11.4.0"}, "linux-amd64")
+        arm = dict(linux, GITHUB_JOB="compile-linux-arm64", RUNNER_ARCH="ARM64")
+        self.linux_arm64_evidence = PROVENANCE.build_evidence(self.handoff, self.identity, arm, {"gcc": "gcc 11.4.0"}, "linux-arm64")
 
     def test_workflow_identity_binds_reviewed_source_and_host(self):
         for key, value in (("GITHUB_WORKFLOW_SHA", "b" * 40), ("GITHUB_REPOSITORY_ID", "999"),
@@ -164,7 +166,8 @@ class ProvenanceTest(unittest.TestCase):
         (self.root / "engine").mkdir()
         (self.root / "engine/source-lock.json").write_text(json.dumps(self.lock))
         artifacts = []
-        for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"), ("linux-amd64", "linux", "amd64")):
+        for platform, goos, goarch in (("darwin-arm64", "darwin", "arm64"), ("linux-amd64", "linux", "amd64"),
+                                       ("linux-arm64", "linux", "arm64")):
             archive = directory / ("opengrep-" + self.identity["version"] + "-" + platform + ".tar.gz")
             archive.write_bytes(b"already qualified archive for " + platform.encode())
             artifacts.append({"goos": goos, "goarch": goarch, "sha256": PROVENANCE.digest(archive), "bytes": archive.stat().st_size,
@@ -176,13 +179,14 @@ class ProvenanceTest(unittest.TestCase):
         (directory / "release.json").write_text(json.dumps(metadata))
         (directory / PROVENANCE.evidence_name("darwin-arm64")).write_text(json.dumps(self.evidence))
         (directory / PROVENANCE.evidence_name("linux-amd64")).write_text(json.dumps(self.linux_evidence))
+        (directory / PROVENANCE.evidence_name("linux-arm64")).write_text(json.dumps(self.linux_arm64_evidence))
         (directory / "provenance.sigstore.json").write_text("verified by cryptographic verifier")
         return directory
 
     def test_promotion_rejects_changed_and_extra_assets_before_upload(self):
         directory = self.release_directory()
         with mock.patch.object(PROVENANCE, "ROOT", self.root):
-            self.assertEqual(len(PROMOTE.release_files(directory, self.identity)), 6)
+            self.assertEqual(len(PROMOTE.release_files(directory, self.identity)), 8)
             (directory / "unexpected.txt").write_text("extra payload")
             with self.assertRaisesRegex(ValueError, "exactly the archives"):
                 PROMOTE.release_files(directory, self.identity)
@@ -215,12 +219,15 @@ class ProvenanceTest(unittest.TestCase):
         state = json.loads(state_path.read_text())
         self.assertTrue(state["created"])
         self.assertEqual([arguments[:2] for arguments in state["calls"]], [
-            ["attestation", "verify"]] * 5 + [["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
+            ["attestation", "verify"]] * 7 + [["api", "--paginate"], ["release", "create"], ["api", "--paginate"]])
 
     def test_linux_evidence_binds_its_own_job_and_runner(self):
         PROVENANCE.check_evidence(self.linux_evidence, self.identity, self.handoff, "linux-amd64")
+        PROVENANCE.check_evidence(self.linux_arm64_evidence, self.identity, self.handoff, "linux-arm64")
         for evidence, platform in ((self.evidence, "linux-amd64"), (self.linux_evidence, "darwin-arm64"),
-                                   (dict(self.linux_evidence, runner=dict(self.linux_evidence["runner"], RUNNER_ARCH="ARM64")), "linux-amd64")):
+                                   (self.linux_evidence, "linux-arm64"), (self.linux_arm64_evidence, "linux-amd64"),
+                                   (dict(self.linux_evidence, runner=dict(self.linux_evidence["runner"], RUNNER_ARCH="ARM64")), "linux-amd64"),
+                                   (dict(self.linux_arm64_evidence, runner=dict(self.linux_arm64_evidence["runner"], RUNNER_ARCH="X64")), "linux-arm64")):
             with self.subTest(platform=platform), self.assertRaises(ValueError):
                 PROVENANCE.check_evidence(evidence, self.identity, self.handoff, platform)
 

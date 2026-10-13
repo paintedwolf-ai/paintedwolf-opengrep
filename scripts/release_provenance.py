@@ -16,7 +16,8 @@ OWNER_ID = "289211278"
 WORKFLOW = ".github/workflows/native-release.yml"
 # Each released platform: the job that compiles it and the hosted runner it compiles on.
 PLATFORMS = {"darwin-arm64": {"job": "compile", "runner": ("macOS", "ARM64")},
-             "linux-amd64": {"job": "compile-linux", "runner": ("Linux", "X64")}}
+             "linux-amd64": {"job": "compile-linux", "runner": ("Linux", "X64")},
+             "linux-arm64": {"job": "compile-linux-arm64", "runner": ("Linux", "ARM64")}}
 
 
 def evidence_name(platform):
@@ -197,7 +198,7 @@ def main():
     build.add_argument("--build-directory", required=True, type=Path)
     build.add_argument("--output", required=True, type=Path)
     build.add_argument("--platform", choices=sorted(PLATFORMS), default="darwin-arm64")
-    build.add_argument("--image", help="linux-amd64: the compile image the engine was built in")
+    build.add_argument("--image", help="Linux platforms: the compile image the engine was built in")
     check = commands.add_parser("check-evidence")
     check.add_argument("--evidence", required=True, type=Path)
     check.add_argument("--handoff", type=Path)
@@ -210,7 +211,7 @@ def main():
         result = identity
     elif args.operation == "build-evidence":
         build = args.build_directory.resolve(strict=True)
-        if args.platform == "linux-amd64":
+        if args.platform.startswith("linux-"):
             require(bool(args.image), "Linux build evidence names its compile image")
             tools = linux_tool_versions(build, args.image)
         else:

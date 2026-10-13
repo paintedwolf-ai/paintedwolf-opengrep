@@ -277,11 +277,11 @@ def validate_platform(directory, package, target, binary_hash):
         raise ValueError("No maintained platform qualification validator for " + system)
 
 
-# glibc and the loader, and libgcc_s, which glibc itself loads for thread cancellation and
-# unwinding, so every glibc system carries it (as manylinux also assumes).
+# glibc, and libgcc_s, which glibc itself loads for thread cancellation and unwinding,
+# so every glibc system carries it (as manylinux also assumes). The architecture's
+# loader comes from the runtime lock's target declaration.
 LINUX_SYSTEM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
-                          "libutil.so.1", "libresolv.so.2", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1",
-                          "libgcc_s.so.1"}
+                          "libutil.so.1", "libresolv.so.2", "libgcc_s.so.1"}
 
 
 def validate_linux_image(image, arch, ceiling):
@@ -301,21 +301,31 @@ def validate_linux_image(image, arch, ceiling):
 
 
 def validate_linux_platform(checks, runtime, lock, arch, binary_hash):
-    """The rules a consumer applies to a Linux engine: glibc baseline, a launcher that
-    depends only on glibc, every library carried by the distribution, the extracted
-    payload equal to the standalone one, and CPython from the locked source."""
+    """The rules a consumer applies to a Linux engine: glibc baseline, the declared CPU
+    baseline and loader of its architecture, a launcher that depends only on glibc,
+    every library carried by the distribution, the extracted payload equal to the
+    standalone one, and CPython from the locked source."""
     baseline = lock["glibc_max"]
+    target = lock["targets"].get(arch)
+    require(isinstance(target, dict) and all(isinstance(target.get(key), str) and target[key]
+                                              for key in ("machine", "cpu", "loader")),
+            "No declared Linux target for " + arch)
     ceiling = deployment_version([int(part) for part in baseline.split(".")])
     require(checks.get("schema_version") == 1 and checks.get("platform") == "linux"
-            and checks.get("architecture") == arch and checks.get("glibc_max") == baseline,
+            and checks.get("architecture") == arch and checks.get("glibc_max") == baseline
+            and checks.get("cpu") == target["cpu"] and checks.get("loader") == target["loader"],
             "Linux platform report identity differs")
     require(runtime.get("python_runtime", {}).get("source_sha256") == lock["python"]["sha256"],
             "Linux Python runtime differs from its locked source")
+    compiler = runtime.get("native", {}).get("compiler", {})
+    require(compiler.get("cpu") == target["cpu"] and compiler.get("architecture") == arch,
+            "Linux runtime was compiled for another CPU baseline")
+    system_libraries = LINUX_SYSTEM_LIBRARIES | {target["loader"]}
     outer = checks.get("outer", {})
     require(outer.get("path") == "opengrep" and outer.get("sha256") == binary_hash,
             "Platform checks bind a different executable")
     validate_linux_image(outer, arch, ceiling)
-    require(not outer.get("rpaths") and set(outer.get("dependencies", [])) <= LINUX_SYSTEM_LIBRARIES,
+    require(not outer.get("rpaths") and set(outer.get("dependencies", [])) <= system_libraries,
             "Linux launcher depends on libraries outside glibc")
     standalone = checks.get("standalone")
     require(isinstance(standalone, list) and standalone and standalone == checks.get("extracted"),
@@ -328,7 +338,7 @@ def validate_linux_platform(checks, runtime, lock, arch, binary_hash):
         base = PurePosixPath(image["path"]).parent
         search = [posixpath.normpath(str(base / value.removeprefix("$ORIGIN").lstrip("/"))) for value in image.get("rpaths", [])]
         for library in image.get("dependencies", []):
-            if library not in LINUX_SYSTEM_LIBRARIES:
+            if library not in system_libraries:
                 require(any(posixpath.normpath(posixpath.join(directory, library)) in paths for directory in search),
                         f"Linux image {image['path']} needs {library}, which the distribution does not carry")
 

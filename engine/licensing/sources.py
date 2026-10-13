@@ -135,7 +135,7 @@ def ocaml_components(export_path, seeds):
 
 
 # Released platforms: the runtime lock section and OCaml switch export each builds from.
-PLATFORMS = {"macos-arm64": "macos", "linux-amd64": "linux"}
+PLATFORMS = {"macos-arm64": "macos", "linux-amd64": "linux", "linux-arm64": "linux"}
 
 
 def enumerate_components(package=PACKAGE, engine_submodules=None, platform="macos-arm64"):
