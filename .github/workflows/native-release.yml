@@ -325,6 +325,8 @@ jobs:
 
   verify-linux:
     needs: compile-linux
+    # Explicit, since the skipped tag preflight upstream would otherwise skip this job too.
+    if: ${{ !cancelled() && needs.compile-linux.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
@@ -431,6 +433,8 @@ jobs:
 
   verify-linux-arm64:
     needs: compile-linux-arm64
+    # Explicit, since the skipped tag preflight upstream would otherwise skip this job too.
+    if: ${{ !cancelled() && needs.compile-linux-arm64.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
     outputs:
