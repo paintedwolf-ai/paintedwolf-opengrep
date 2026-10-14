@@ -26,7 +26,8 @@ MAX_EXPANDED_BYTES = 2 << 30
 
 # Released platforms: the target an artifact is validated as, and where its notices live.
 PLATFORMS = {"darwin-arm64": (("darwin", "arm64"), "licensing"),
-             "linux-amd64": (("linux", "amd64"), "licensing/linux-amd64")}
+             "linux-amd64": (("linux", "amd64"), "licensing/linux-amd64"),
+             "linux-arm64": (("linux", "arm64"), "licensing/linux-arm64")}
 
 
 def release_notice_bytes(package, lock, platform="darwin-arm64"):
@@ -48,8 +49,9 @@ def release_notice_bytes(package, lock, platform="darwin-arm64"):
 
 
 def validate_release_artifact(directory, package, channel, scratch, platform="darwin-arm64"):
-    if platform == "linux-amd64":
-        return validate_linux_artifact(directory, package, scratch)
+    target = PLATFORMS[platform][0]
+    if target[0] == "linux":
+        return validate_linux_artifact(directory, package, scratch, target)
     lock = ARTIFACT.snapshot_inputs(package, scratch / "inputs")
     provenance = ARTIFACT.read_json(directory / "provenance.json")
     profile = ARTIFACT.signing_module().SigningProfile.parse(provenance["signing"]["profile"], platform="darwin")
@@ -70,12 +72,12 @@ def validate_release_artifact(directory, package, channel, scratch, platform="da
     return lock
 
 
-def validate_linux_artifact(directory, package, scratch):
+def validate_linux_artifact(directory, package, scratch, target):
     """A Linux engine as qualified: no signature to check, every other rule the same.
     Stable and prerelease channels accept it alike, since no signing identity applies."""
     lock = ARTIFACT.snapshot_inputs(package, scratch / "inputs")
-    ARTIFACT.require(ARTIFACT.native_target() == ("linux", "amd64"), "Linux packaging runs on linux/amd64")
-    ARTIFACT.validate_artifact(directory, scratch / "inputs", lock, ("linux", "amd64"))
+    ARTIFACT.require(ARTIFACT.native_target() == target, "Linux packaging runs on the engine's own architecture: " + "/".join(target))
+    ARTIFACT.validate_artifact(directory, scratch / "inputs", lock, target)
     return lock
 
 

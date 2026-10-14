@@ -655,27 +655,58 @@ if __name__ == "__main__":
 
 
 class LinuxPlatformRulesTest(unittest.TestCase):
-    LOCK = {"glibc_max": "2.35", "python": {"sha256": "e" * 64}}
+    TARGETS = {"amd64": {"machine": "x86_64", "cpu": "x86-64", "loader": "ld-linux-x86-64.so.2"},
+               "arm64": {"machine": "aarch64", "cpu": "armv8-a", "loader": "ld-linux-aarch64.so.1"}}
+    LOCK = {"glibc_max": "2.35", "targets": TARGETS, "python": {"sha256": "e" * 64}}
 
-    def image(self, path, **facts):
-        return dict({"path": path, "sha256": "a" * 64, "architecture": "amd64", "glibc_versions": ["2.17", "2.34"],
+    def image(self, path, arch="amd64", **facts):
+        return dict({"path": path, "sha256": "a" * 64, "architecture": arch, "glibc_versions": ["2.17", "2.34"],
                      "dependencies": ["libc.so.6"], "rpaths": []}, **facts)
 
-    def checks(self, **changes):
-        standalone = [self.image("opengrep.bin", rpaths=["$ORIGIN"]), self.image("semgrep/bin/opengrep-core"),
-                      self.image("_ssl.so", dependencies=["libssl.so.3", "libc.so.6"], rpaths=["$ORIGIN"]),
-                      self.image("libssl.so.3")]
-        value = {"schema_version": 1, "platform": "linux", "architecture": "amd64", "glibc_max": "2.35",
-                 "outer": self.image("opengrep", sha256="b" * 64), "standalone": standalone, "extracted": standalone}
+    def checks(self, arch="amd64", **changes):
+        target = self.TARGETS[arch]
+        standalone = [self.image("opengrep.bin", arch, rpaths=["$ORIGIN"]), self.image("semgrep/bin/opengrep-core", arch),
+                      self.image("_ssl.so", arch, dependencies=["libssl.so.3", "libc.so.6"], rpaths=["$ORIGIN"]),
+                      self.image("libssl.so.3", arch)]
+        value = {"schema_version": 1, "platform": "linux", "architecture": arch, "glibc_max": "2.35",
+                 "cpu": target["cpu"], "loader": target["loader"],
+                 "outer": self.image("opengrep", arch, sha256="b" * 64, dependencies=["libc.so.6", target["loader"]]),
+                 "standalone": standalone, "extracted": standalone}
         value.update(changes)
         return value
 
-    def validate(self, checks, runtime=None):
-        ARTIFACT.validate_linux_platform(checks, runtime or {"python_runtime": {"source_sha256": "e" * 64}},
-                                         self.LOCK, "amd64", "b" * 64)
+    def runtime(self, arch="amd64", **changes):
+        value = {"python_runtime": {"source_sha256": "e" * 64},
+                 "native": {"compiler": {"architecture": arch, "cpu": self.TARGETS[arch]["cpu"],
+                                         "machine": self.TARGETS[arch]["machine"] + "-linux-gnu"}}}
+        value.update(changes)
+        return value
 
-    def test_consumer_rules_accept_a_bound_distribution(self):
-        self.validate(self.checks())
+    def validate(self, checks, runtime=None, arch="amd64"):
+        ARTIFACT.validate_linux_platform(checks, runtime or self.runtime(arch), self.LOCK, arch, "b" * 64)
+
+    def test_consumer_rules_accept_a_bound_distribution_on_each_architecture(self):
+        for arch in ("amd64", "arm64"):
+            with self.subTest(arch=arch):
+                self.validate(self.checks(arch), arch=arch)
+
+    def test_declared_target_binds_cpu_baseline_loader_and_compiler(self):
+        amd64, arm64 = self.TARGETS["amd64"], self.TARGETS["arm64"]
+        cases = (
+            (self.checks(cpu=arm64["cpu"]), None, "identity differs"),
+            (self.checks(loader=arm64["loader"]), None, "identity differs"),
+            (self.checks(outer=self.image("opengrep", sha256="b" * 64, dependencies=["libc.so.6", arm64["loader"]])), None, "outside glibc"),
+            (self.checks(), self.runtime(native={"compiler": {"architecture": "amd64", "cpu": arm64["cpu"]}}), "another CPU baseline"),
+            (self.checks(), self.runtime(native={}), "another CPU baseline"),
+        )
+        for checks, runtime, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                self.validate(checks, runtime)
+        with self.assertRaisesRegex(ValueError, "No declared Linux target"):
+            ARTIFACT.validate_linux_platform(self.checks(), self.runtime(), {"glibc_max": "2.35", "targets": {}, "python": {"sha256": "e" * 64}},
+                                             "amd64", "b" * 64)
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            self.validate(self.checks("arm64", architecture="amd64"), arch="arm64")
 
     def test_consumer_rules_reject_each_violation(self):
         missing = [image for image in self.checks()["standalone"] if image["path"] != "libssl.so.3"]

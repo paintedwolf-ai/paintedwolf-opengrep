@@ -20,7 +20,6 @@ import sys
 import tempfile
 
 PACKAGE = Path(__file__).resolve().parents[1] / "engine"
-TARGET = ("linux", "amd64")
 ARTIFACT_MEMBERS = {"opengrep", "provenance.json", "source-lock.json", "contracts.jsonl", "opengrep-source.tar.gz",
                     "platform-checks.json", "runtime.json", "LICENSE"}
 
@@ -36,6 +35,8 @@ def module(name, path):
 HANDOFF = module("linux_handoff", PACKAGE / "build_support/handoff.py")
 RUNTIME = module("linux_runtime", PACKAGE / "build_support/runtime.py")
 EXECUTION = module("linux_test_execution", PACKAGE / "build_support/test_execution.py")
+# The engine this host compiles and qualifies: its own architecture, never a cross-build.
+TARGET = ("linux", RUNTIME.LINUX_ARCHITECTURES.get(platform.machine()))
 
 
 def artifact_module():
@@ -144,7 +145,7 @@ def verify(input_path, output, diagnostics):
         HANDOFF.require(version == f'{lock["upstream_version"]}+paintedwolf.{lock["patch_version"]}',
                         "Final executable version differs from source lock")
         runtimes = json.loads((PACKAGE / "locks/runtimes.json").read_text())
-        report = RUNTIME.validate_linux(cli, extracted, runtimes["linux"]["glibc_max"])
+        report = RUNTIME.validate_linux(cli, extracted, runtimes["linux"])
         HANDOFF.require(report == json.loads((artifacts / "platform-checks.json").read_text()),
                         "Qualified images differ from the build's platform report")
         contracts(cli / "opengrep", scratch / "contracts.jsonl", scratch, env)
@@ -200,7 +201,8 @@ def main():
     command.add_argument("--diagnostics", type=Path, required=True)
     args = parser.parse_args()
     try:
-        HANDOFF.require(sys.platform == "linux" and platform.machine() == "x86_64", "Linux release requires linux/amd64")
+        HANDOFF.require(sys.platform == "linux" and TARGET[1] is not None,
+                        "Linux release requires a linux/amd64 or linux/arm64 host")
         if args.command == "prepare-python":
             prepare_python(args.output.resolve())
         elif args.command == "export":

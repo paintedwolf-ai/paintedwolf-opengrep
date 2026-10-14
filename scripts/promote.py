@@ -63,7 +63,7 @@ def draft(directory, identity):
     tag = identity["ref"].removeprefix("refs/tags/")
     with tempfile.TemporaryDirectory(prefix="opengrep-draft-") as temporary:
         notes = Path(temporary) / "notes.md"
-        notes.write_text("Qualified engines: Developer ID macOS arm64, and Linux amd64 on the glibc 2.35 baseline.\n\n"
+        notes.write_text("Qualified engines: Developer ID macOS arm64, and Linux amd64 and arm64 on the glibc 2.35 baseline.\n\n"
                          "Source commit: " + identity["commit"]
                          + "\nBuild run: https://github.com/" + PROVENANCE.REPOSITORY + "/actions/runs/"
                          + identity["run_id"] + "/attempts/" + identity["run_attempt"]

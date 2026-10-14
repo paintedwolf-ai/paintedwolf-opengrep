@@ -29,28 +29,39 @@ must report the exact selected version before native qualification begins.
 ## Build and test
 
 Install Go 1.26.6 or newer for the pinned Task bootstrap and Python 3.9 or newer
-for tooling. Native builds run on macOS arm64 and Linux amd64. macOS needs Xcode
+for tooling. Native builds run on macOS arm64 and Linux amd64 and arm64. macOS needs Xcode
 command-line tools, Node.js 26.3.0, opam, and pkgconf (`brew install opam
 pkgconf`). Native libraries and the private Python runtime come from verified
 source/runtime pins. Windows engine builds and execution are future work.
 
 ### Linux builds
 
-Linux engines run on glibc 2.35 and later (`engine/locks/runtimes.json`,
-`linux.glibc_max`). They build in two stages, because the pinned grammar
-generator needs a newer glibc than the engine may require:
+Linux engines ship for amd64 and arm64. Both run on glibc 2.35 and later
+(`engine/locks/runtimes.json`, `linux.glibc_max`) and require only the
+architecture's baseline CPU: x86-64 or ARMv8-A, with no optional extensions
+(`linux.targets`, which also names each architecture's dynamic loader). The
+engine, its native libraries and CPython compile with the image compiler's
+default target; the runtime driver reads that default back from the compiler
+and fails the build if it differs from the declaration, and the platform report
+in every artifact carries the declared `cpu` and `loader`. A build that succeeds
+on a newer runner is not proof for an older host, so the compile image is the
+glibc baseline itself. Linux engines build in two stages, because the pinned
+grammar generator needs a newer glibc than the engine may require:
 
 1. `--prepare-only` checks out and patches the engine and generates the native
-   grammars, on a host with glibc 2.39 or later.
+   grammars, on a host with glibc 2.39 or later. Its outputs are the same on
+   either architecture.
 2. `--compile-prepared` checks that the prepared inputs still match the
-   checked-in package, then compiles in `engine/linux/Dockerfile`, Ubuntu 22.04.
+   checked-in package, then compiles in `engine/linux/Dockerfile`, Ubuntu 22.04,
+   on the engine's own architecture. There is no cross-compilation: each engine
+   compiles, extracts and runs its contracts on the architecture it ships for.
 
 The compile builds the pinned native libraries and zlib statically, CPython
 from its pinned python.org source tarball, and links tree-sitter and the C++
 and GCC runtimes statically into `opengrep-core`. The launcher depends only on
-glibc, and every other library the distribution needs travels inside it with
-an `$ORIGIN` runpath. `runtime.py validate-linux` records that as
-`platform-checks.json` and fails the build otherwise.
+glibc and its architecture's loader, and every other library the distribution
+needs travels inside it with an `$ORIGIN` runpath. `runtime.py validate-linux`
+records that as `platform-checks.json` and fails the build otherwise.
 
 ```sh
 docker build -t opengrep-linux-prepare -f engine/linux/prepare.Dockerfile engine/linux
@@ -61,6 +72,14 @@ docker run --rm -v "$PWD":/work/src -v "$PWD/.cache/linux":/work/out -w /work/sr
   python3 engine/build.py /work/out/native-work --compile-prepared --jobs 8
 # /work/out/native-work/artifact holds the qualified development artifact
 ```
+
+The same images build on an arm64 host. On an amd64 host, Docker can build and
+run the arm64 compile image under QEMU user emulation
+(`docker run --privileged --rm tonistiigi/binfmt --install arm64`, then
+`docker buildx build --platform linux/arm64 --load -t opengrep-linux-compile-arm64 engine/linux`
+and `docker run --platform linux/arm64 ...` for the compile stage). That takes
+many hours and is development evidence only: release engines compile and
+qualify on native hosted arm64 runners.
 
 Keep `build` out of the build directory's path: the contracts scan files under it,
 and the engine's default ignore list skips any `build` directory.
@@ -129,7 +148,8 @@ do not inherit the scanner's default `build/` exclusion.
 
 Set `RELEASE_TAG` to `v` followed by the exact version in the finalized
 `engine/source-lock.json`; use a new, unpublished tag. `--platform` selects
-`darwin-arm64` (the default) or `linux-amd64`. Packaging verifies the artifact
+`darwin-arm64` (the default), `linux-amd64` or `linux-arm64`; Linux packaging
+runs on the engine's own architecture. Packaging verifies the artifact
 against a frozen input snapshot and, on macOS, checks the executable's native
 signature before producing a deterministic archive and `release.json`. Linux
 engines carry no code signature; the release attestations bind their bytes.
@@ -155,7 +175,8 @@ change followed by a new engine revision. Developer ID signing does not itself
 claim Apple notarization; Painted Wolf Code notarizes its complete application.
 
 The manual `Native release` workflow builds the macOS arm64 engine on fresh
-GitHub-hosted macOS runners and the Linux amd64 engine on fresh Ubuntu runners.
+GitHub-hosted macOS runners and the Linux amd64 and arm64 engines on fresh
+Ubuntu runners of each architecture (`ubuntu-24.04` and `ubuntu-24.04-arm`).
 Run it at the exact version tag on a commit already reachable from `main`, with no
 existing release or draft:
 
@@ -177,9 +198,22 @@ before building. Its isolated stages are:
 6. In the protected `release` environment, verify the artifact again, attest the
    archive, descriptor and build evidence, and create a complete draft.
 
-The Linux engine compiles in the pinned `engine/linux/Dockerfile` container and is
-verified on a fresh runner against the glibc baseline; it carries no code signature.
-The release job combines both platforms' verified outputs into one draft.
+Each Linux engine compiles in the pinned `engine/linux/Dockerfile` container on a
+runner of its own architecture and is verified on another fresh runner of that
+architecture against the glibc baseline and the declared CPU target; it carries no
+code signature. The release job requires all three verified outputs and combines
+them into one draft, so a missing or failed architecture cannot produce a release.
+
+To qualify the Linux engines on any ref without a release, for example a pull
+request branch that changes Linux inputs, run the workflow's `qualify-linux`
+operation. It compiles and verifies both Linux engines on hosted runners of each
+architecture, packages them against the locked version, and keeps the verified
+archives as workflow artifacts for fourteen days. It skips the tag preflight and
+the build evidence binding, and creates no release:
+
+```sh
+gh workflow run native-release.yml --ref "$BRANCH" -f operation=qualify-linux
+```
 
 Jobs exchange bounded, digest-checked handoffs through immutable Actions artifact
 IDs from the same run and attempt. No completed engine cache is reused for a

@@ -69,6 +69,18 @@
   },
   "linux": {
     "glibc_max": "2.35",
+    "targets": {
+      "amd64": {
+        "machine": "x86_64",
+        "cpu": "x86-64",
+        "loader": "ld-linux-x86-64.so.2"
+      },
+      "arm64": {
+        "machine": "aarch64",
+        "cpu": "armv8-a",
+        "loader": "ld-linux-aarch64.so.1"
+      }
+    },
     "native_libraries": [
       {
         "name": "zlib",

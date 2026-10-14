@@ -300,13 +300,36 @@ def read_elf(path):
             "rpaths": list(dict.fromkeys(rpaths)), "glibc_versions": sorted(versions, key=order)}
 
 
-# The libraries a Linux image may take from the host: glibc and the loader, and
-# libgcc_s, which glibc itself loads for thread cancellation and unwinding, so
-# every glibc system carries it (as manylinux also assumes).
+# The libraries a Linux image may take from the host: glibc, and libgcc_s, which
+# glibc itself loads for thread cancellation and unwinding, so every glibc system
+# carries it (as manylinux also assumes). The architecture's loader is added from
+# the target declaration.
 LINUX_SYSTEM_LIBRARIES = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
-                          "libutil.so.1", "libresolv.so.2", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1",
-                          "libgcc_s.so.1"}
+                          "libutil.so.1", "libresolv.so.2", "libgcc_s.so.1"}
 LINUX_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
+
+
+def linux_target(spec, machine=None):
+    """The declared Linux target for a machine: its CPU baseline and dynamic loader."""
+    machine = platform.machine() if machine is None else machine
+    architecture = LINUX_ARCHITECTURES[machine]
+    target = spec["targets"][architecture]
+    if target["machine"] != machine:
+        raise RuntimeError("Linux target declaration names another machine: " + architecture)
+    return architecture, target
+
+
+def compiler_target():
+    """The C compiler's target machine and the CPU it generates code for by default.
+    The engine and its libraries build without -march, so this is the CPU baseline
+    every compiled image requires."""
+    machine = subprocess.check_output(["gcc", "-dumpmachine"], text=True).strip()
+    options = subprocess.check_output(["gcc", "-Q", "--help=target"], text=True)
+    march = [line.split(None, 1)[1].strip() for line in options.splitlines()
+             if line.strip().startswith("-march=") and len(line.split(None, 1)) == 2]
+    if len(march) != 1 or not march[0] or march[0].startswith("["):
+        raise RuntimeError("Cannot determine the compiler's default CPU")
+    return {"machine": machine, "cpu": march[0]}
 
 
 def static_cxx_runtime(prefix):
@@ -344,8 +367,14 @@ def linux(root, spec, jobs):
     """The Linux runtime: the pinned native libraries built statically, the static C++
     runtime, and CPython from its pinned source."""
     root.mkdir()
+    architecture, target = linux_target(spec)
+    compiler = compiler_target()
+    if compiler["cpu"] != target["cpu"]:
+        raise RuntimeError("The compiler's default CPU %s differs from the declared %s baseline %s"
+                           % (compiler["cpu"], architecture, target["cpu"]))
     prefix, native = native_libraries(root, spec, jobs)
     native["static_runtime"] = static_cxx_runtime(prefix)
+    native["compiler"] = dict(compiler, architecture=architecture)
     python, runtime = python_from_source(root, spec["python"], prefix, jobs)
     env = {"CPPFLAGS": "-I" + str(prefix / "include"), "LDFLAGS": "-L" + str(prefix / "lib"),
            "PKG_CONFIG_PATH": str(prefix / "lib/pkgconfig"),
@@ -376,15 +405,18 @@ def validate_linux_image(image, architecture, maximum):
             raise RuntimeError("ELF image has a build-host runpath: " + image["path"])
 
 
-def validate_linux(cli, extracted, glibc_max):
+def validate_linux(cli, extracted, spec):
     """The platform report for a Linux onefile build: the launcher depends only on
-    glibc, every packaged image stays within the glibc baseline and finds its non-system
-    libraries inside the distribution, and the extracted payload equals the standalone one."""
-    architecture = LINUX_ARCHITECTURES[platform.machine()]
+    glibc and this architecture's loader, every packaged image stays within the glibc
+    baseline and finds its non-system libraries inside the distribution, and the
+    extracted payload equals the standalone one."""
+    architecture, target = linux_target(spec)
+    glibc_max = spec["glibc_max"]
+    system_libraries = LINUX_SYSTEM_LIBRARIES | {target["loader"]}
     maximum = tuple(int(part) for part in glibc_max.split("."))
     outer = dict(read_elf(cli / "opengrep"), path="opengrep", sha256=digest(cli / "opengrep"))
     validate_linux_image(outer, architecture, maximum)
-    if outer["rpaths"] or set(outer["dependencies"]) - LINUX_SYSTEM_LIBRARIES:
+    if outer["rpaths"] or set(outer["dependencies"]) - system_libraries:
         raise RuntimeError("Onefile launcher depends on libraries outside glibc")
     standalone = linux_images(cli / "entrypoint.dist")
     extracted_images = linux_images(extracted)
@@ -398,11 +430,12 @@ def validate_linux(cli, extracted, glibc_max):
         base = Path(image["path"]).parent
         search = [(base / value.removeprefix("$ORIGIN").lstrip("/")).as_posix() for value in image["rpaths"]]
         for library in image["dependencies"]:
-            if library in LINUX_SYSTEM_LIBRARIES:
+            if library in system_libraries:
                 continue
             if not any(os.path.normpath(os.path.join(directory, library)) in paths for directory in search):
                 raise RuntimeError("ELF image %s needs %s, which the distribution does not carry" % (image["path"], library))
     report = {"schema_version": 1, "platform": "linux", "architecture": architecture, "glibc_max": glibc_max,
+              "cpu": target["cpu"], "loader": target["loader"],
               "outer": outer, "standalone": standalone, "extracted": extracted_images}
     (cli / "platform-checks.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
@@ -430,7 +463,7 @@ def main():
         linux(root, lock["linux"], args.jobs)
         return
     if args.mode == "validate-linux":
-        validate_linux(root, args.extracted.resolve(), lock["linux"]["glibc_max"])
+        validate_linux(root, args.extracted.resolve(), lock["linux"])
         return
     root.mkdir()
     spec = lock["macos"]

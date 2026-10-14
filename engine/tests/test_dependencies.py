@@ -222,7 +222,8 @@ class PythonDependencyTest(unittest.TestCase):
             self.assertTrue(entry["url"].startswith("https://files.pythonhosted.org/"))
 
     def test_each_host_reads_its_own_locked_wheel_set(self):
-        for system, machine, expected in (("Darwin", "arm64", "macos-arm64-cp313"), ("Linux", "x86_64", "linux-amd64-cp313")):
+        for system, machine, expected in (("Darwin", "arm64", "macos-arm64-cp313"), ("Linux", "x86_64", "linux-amd64-cp313"),
+                                          ("Linux", "aarch64", "linux-arm64-cp313")):
             with self.subTest(system=system), mock.patch.object(DEPS.platform, "system", return_value=system), \
                     mock.patch.object(DEPS.platform, "machine", return_value=machine):
                 self.assertEqual(DEPS.host_python_platform(), expected)
@@ -232,13 +233,15 @@ class PythonDependencyTest(unittest.TestCase):
             DEPS.host_python_platform()
 
     def test_platform_wheels_share_a_requirement_with_one_hash_each(self):
-        linux = DEPS.python_distributions(PACKAGE, "linux-amd64-cp313")
         macos = DEPS.python_distributions(PACKAGE, "macos-arm64-cp313")
-        for a, b in zip(linux["runtime"], macos["runtime"]):
-            self.assertEqual((a["name"], a["version"]), (b["name"], b["version"]))
-            if "none-any" not in a["filename"] and not a["filename"].endswith(".tar.gz"):
-                self.assertIn("manylinux", a["filename"])
-                self.assertNotEqual(a["sha256"], b["sha256"])
+        for platform, machine in (("linux-amd64-cp313", "x86_64"), ("linux-arm64-cp313", "aarch64")):
+            linux = DEPS.python_distributions(PACKAGE, platform)
+            for a, b in zip(linux["runtime"], macos["runtime"]):
+                self.assertEqual((a["name"], a["version"]), (b["name"], b["version"]))
+                if "none-any" not in a["filename"] and not a["filename"].endswith(".tar.gz"):
+                    self.assertIn("manylinux", a["filename"])
+                    self.assertIn(machine, a["filename"])
+                    self.assertNotEqual(a["sha256"], b["sha256"])
 
     def test_a_requirement_rejects_a_repeated_hash(self):
         with tempfile.TemporaryDirectory() as directory:
